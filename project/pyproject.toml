@@ -48,6 +48,6 @@ Issues = "https://github.com/pdigonzelli/django-multitenant/issues"
 Changelog = "https://github.com/pdigonzelli/django-multitenant/blob/main/CHANGELOG.md"
 
 [tool.pytest.ini_options]
-DJANGO_SETTINGS_MODULE = "django_multitenant_mix.settings"
+DJANGO_SETTINGS_MODULE = "config.settings"
 python_files = ["tests.py", "test_*.py", "*_tests.py", "tests_*.py", "tests_integration.py", "tests_admin_base.py"]
 testpaths = ["multitenant"]
