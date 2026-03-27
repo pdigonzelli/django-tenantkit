@@ -1,0 +1,124 @@
+{% extends "admin/base_site.html" %}
+{% load i18n admin_urls static %}
+
+{% block extrastyle %}
+  {{ block.super }}
+  <style>
+    .delete-warning {
+      background: #ffebee;
+      border: 2px solid #f44336;
+      border-radius: 4px;
+      padding: 20px;
+      margin: 20px 0;
+    }
+    .delete-warning h2 {
+      color: #d32f2f;
+      margin-top: 0;
+    }
+    .object-list {
+      background: #fff3e0;
+      border-left: 4px solid #ff9800;
+      padding: 15px;
+      margin: 15px 0;
+      max-height: 300px;
+      overflow-y: auto;
+    }
+    .object-list ul {
+      margin: 10px 0;
+      padding-left: 20px;
+    }
+    .confirmation-input {
+      font-family: monospace;
+      font-size: 16px;
+      padding: 10px;
+      border: 2px solid #f44336;
+      border-radius: 4px;
+      width: 100%;
+      max-width: 400px;
+    }
+    .confirmation-section {
+      margin: 30px 0;
+    }
+    .btn-danger {
+      background: #f44336;
+      color: white;
+    }
+    .btn-danger:hover {
+      background: #d32f2f;
+    }
+    .warning-icon {
+      font-size: 48px;
+      color: #f44336;
+      text-align: center;
+      margin-bottom: 20px;
+    }
+  </style>
+{% endblock %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+  <a href="{% url 'admin:index' %}">{% translate 'Home' %}</a>
+  &rsaquo; <a href="{% url 'admin:app_list' app_label=opts.app_label %}">{{ opts.app_config.verbose_name }}</a>
+  &rsaquo; <a href="{% url opts|admin_urlname:'changelist' %}">{{ opts.verbose_name_plural|capfirst }}</a>
+  &rsaquo; {% translate 'Permanent Deletion' %}
+</div>
+{% endblock %}
+
+{% block content %}
+<div id="content-main">
+  <div class="delete-warning">
+    <div class="warning-icon">⚠️</div>
+    <h2>{% translate 'WARNING: Permanent Deletion' %}</h2>
+    
+    <p><strong>{% translate 'You are about to PERMANENTLY delete the following records.' %}</strong></p>
+    
+    <p style="color: #d32f2f; font-weight: bold;">
+      {% translate 'This action CANNOT be undone. The records will be permanently removed from the database and cannot be restored.' %}
+    </p>
+    
+    <div class="object-list">
+      <h3>{% blocktranslate with count=count %}{{ count }} record(s) selected for permanent deletion:{% endblocktranslate %}</h3>
+      <ul>
+        {% for obj in queryset %}
+          <li>{{ obj }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+  </div>
+
+  <form method="post">
+    {% csrf_token %}
+    
+    {# Preserve selected object IDs #}
+    {% for obj in queryset %}
+      <input type="hidden" name="{{ action_checkbox_name }}" value="{{ obj.pk }}">
+    {% endfor %}
+    <input type="hidden" name="action" value="hard_delete_selected">
+    <input type="hidden" name="select_across" value="0">
+    
+    <div class="confirmation-section">
+      <h3>{% translate 'Type the confirmation text to proceed:' %}</h3>
+      <p>
+        {% translate 'To confirm PERMANENT deletion, please type:' %} 
+        <code style="background: #ffebee; padding: 5px 10px; font-weight: bold; color: #d32f2f;">{{ expected_confirmation }}</code>
+      </p>
+      
+      <input 
+        type="text" 
+        name="confirm_hard_delete" 
+        class="confirmation-input" 
+        placeholder="{% translate 'Type the confirmation text here' %}"
+        autocomplete="off"
+        autofocus
+      >
+    </div>
+    
+    <div class="submit-row">
+      <input type="submit" class="btn btn-danger" value="{% translate 'Yes, Permanently Delete' %}">
+      <a href="{% url opts|admin_urlname:'changelist' %}" class="button cancel-link">
+        {% translate 'No, Take Me Back' %}
+      </a>
+    </div>
+  </form>
+</div>
+{% endblock %}

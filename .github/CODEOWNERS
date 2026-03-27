@@ -1,0 +1,11 @@
+# Code owners for django-multitenant
+# All changes require approval from @pdigonzelli
+
+# Global owner
+* @pdigonzelli
+
+# Critical files require explicit approval
+/.github/ @pdigonzelli
+/pyproject.toml @pdigonzelli
+/LICENSE @pdigonzelli
+/SECURITY.md @pdigonzelli

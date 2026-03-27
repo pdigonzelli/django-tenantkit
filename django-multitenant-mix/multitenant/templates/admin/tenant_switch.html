@@ -1,0 +1,24 @@
+{% extends "admin/base_site.html" %}
+
+{% block content %}
+<div class="module">
+  <h1>Switch tenant</h1>
+  {% if error %}<p class="errornote">{{ error }}</p>{% endif %}
+  <p>Current scope: {% if current_tenant %}Tenant: {{ current_tenant.name }}{% else %}Default / Global{% endif %}</p>
+  <form method="post">
+    {% csrf_token %}
+    <div class="form-row">
+      <label for="id_tenant">Tenant</label>
+      <select name="tenant" id="id_tenant">
+        <option value="">Default / Global</option>
+        {% for tenant in available_tenants %}
+          <option value="{{ tenant.pk }}" {% if current_tenant and tenant.pk == current_tenant.pk %}selected{% endif %}>{{ tenant.name }} ({{ tenant.slug }})</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="submit-row">
+      <input type="submit" value="Switch" class="default">
+    </div>
+  </form>
+</div>
+{% endblock %}

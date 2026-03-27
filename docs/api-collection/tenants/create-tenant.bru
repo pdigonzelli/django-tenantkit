@@ -1,0 +1,38 @@
+meta {
+  name: Create Tenant
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}{{apiPrefix}}/tenants/
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "slug": "test-tenant",
+    "name": "Test Tenant",
+    "isolation_mode": "database",
+    "provisioning_mode": "manual",
+    "connection_alias": "tenant_test_tenant",
+    "connection_string": "postgresql://testuser:testpass@localhost:5432/test_tenant_db",
+    "provisioning_connection_string": "postgresql://postgres:postgres@localhost:5432/postgres"
+  }
+}
+
+assert {
+  res.status: eq 201
+}
+
+script:post-response {
+  // Save tenant slug for subsequent requests
+  if (res.body && res.body.slug) {
+    bru.setVar("tenantSlug", res.body.slug);
+  }
+}

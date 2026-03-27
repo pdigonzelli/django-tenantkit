@@ -1,0 +1,51 @@
+[project]
+name = "django-multitenant"
+version = "0.1.0"
+description = "A comprehensive Django multi-tenancy solution with schema isolation, tenant-aware middleware, and flexible routing"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [
+    {name = "Pablo Digonzelli", email = "pdigonzelli@gmail.com"}
+]
+keywords = ["django", "multitenant", "multi-tenant", "saas", "postgresql", "schema"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Framework :: Django",
+    "Framework :: Django :: 4.2",
+    "Framework :: Django :: 5.0",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+dependencies = [
+    "django>=6.0.3",
+    "django-extensions>=4.1",
+    "djangorestframework>=3.17.0",
+    "drf-spectacular>=0.29.0",
+    "psycopg[binary,pool]>=3.3.3",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-django>=4.5.0",
+    "pytest-cov>=4.1.0",
+    "ruff>=0.3.0",
+    "black>=24.0.0",
+    "pyright>=1.1.0",
+    "coverage>=7.0.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/pdigonzelli/django-multitenant"
+Documentation = "https://github.com/pdigonzelli/django-multitenant#readme"
+Repository = "https://github.com/pdigonzelli/django-multitenant"
+Issues = "https://github.com/pdigonzelli/django-multitenant/issues"
+Changelog = "https://github.com/pdigonzelli/django-multitenant/blob/main/CHANGELOG.md"

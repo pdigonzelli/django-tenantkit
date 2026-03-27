@@ -1,0 +1,17 @@
+{% extends "admin/base_site.html" %}
+
+{% block content %}
+<div class="module">
+  <h1>{{ operation_label }}</h1>
+  <p>Tenant: <strong>{{ tenant.name }}</strong> ({{ tenant.slug }})</p>
+  <p>Isolation: <strong>{{ tenant.isolation_mode }}</strong></p>
+  <p>Are you sure you want to continue?</p>
+  <form method="post">
+    {% csrf_token %}
+    <div class="submit-row">
+      <input type="submit" value="Confirm" class="default">
+      <a href="{% url 'admin:multitenant_tenant_change' tenant.pk %}" class="button cancel-link">Cancel</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

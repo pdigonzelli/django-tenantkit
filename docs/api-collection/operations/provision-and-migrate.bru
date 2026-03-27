@@ -1,0 +1,29 @@
+meta {
+  name: Provision and Migrate
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}{{apiPrefix}}/tenants/{{tenantSlug}}/operations/
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "operation": "provision_and_migrate"
+  }
+}
+
+assert {
+  res.status: eq 200
+}
+
+vars:pre-request {
+  tenantSlug: test-tenant
+}

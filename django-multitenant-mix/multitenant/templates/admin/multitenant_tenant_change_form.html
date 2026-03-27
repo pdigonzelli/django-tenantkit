@@ -1,0 +1,22 @@
+{% extends "admin/change_form.html" %}
+
+{% load admin_urls %}
+
+{% block object-tools-items %}
+  {{ block.super }}
+  {% if original %}
+    {% with urls=tenant_operation_urls %}
+      <li><a href="{{ urls.provision_and_migrate }}" class="historylink">Provision &amp; Migrate</a></li>
+      <li><a href="{{ urls.provision_only }}" class="historylink">Provision only</a></li>
+      <li><a href="{{ urls.migrate_only }}" class="historylink">Migrate only</a></li>
+    {% endwith %}
+  {% endif %}
+{% endblock %}
+
+{% block after_related_objects %}
+  {{ block.super }}
+  <div class="help" style="margin-top: 1rem;">
+    <strong>Schema</strong>: only schema fields are editable.<br>
+    <strong>Database</strong>: manual mode shows connection fields; auto mode shows provisioning only.
+  </div>
+{% endblock %}

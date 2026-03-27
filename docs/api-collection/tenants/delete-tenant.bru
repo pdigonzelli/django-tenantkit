@@ -1,0 +1,23 @@
+meta {
+  name: Delete Tenant
+  type: http
+  seq: 5
+}
+
+delete {
+  url: {{baseUrl}}{{apiPrefix}}/tenants/{{tenantSlug}}/
+  body: none
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+assert {
+  res.status: eq 204
+}
+
+vars:pre-request {
+  tenantSlug: test-tenant
+}

@@ -1,0 +1,29 @@
+meta {
+  name: Provision Only
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}{{apiPrefix}}/tenants/{{tenantSlug}}/operations/
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "operation": "provision_only"
+  }
+}
+
+assert {
+  res.status: eq 200
+}
+
+vars:pre-request {
+  tenantSlug: test-tenant
+}

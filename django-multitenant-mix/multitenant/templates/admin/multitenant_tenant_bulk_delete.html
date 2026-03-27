@@ -1,0 +1,133 @@
+{% extends "admin/base_site.html" %}
+{% load i18n admin_urls static %}
+
+{% block extrastyle %}
+  {{ block.super }}
+  <style>
+    .delete-warning {
+      background: #ffebee;
+      border: 2px solid #f44336;
+      border-radius: 4px;
+      padding: 20px;
+      margin: 20px 0;
+    }
+    .delete-warning h2 {
+      color: #d32f2f;
+      margin-top: 0;
+    }
+    .tenant-list {
+      background: #fff3e0;
+      border-left: 4px solid #ff9800;
+      padding: 15px;
+      margin: 15px 0;
+    }
+    .tenant-list ul {
+      margin: 10px 0;
+      padding-left: 20px;
+    }
+    .tenant-list li {
+      margin: 5px 0;
+      font-family: monospace;
+    }
+    .confirmation-input {
+      font-family: monospace;
+      font-size: 16px;
+      padding: 10px;
+      border: 2px solid #f44336;
+      border-radius: 4px;
+      width: 100%;
+      max-width: 400px;
+    }
+    .confirmation-section {
+      margin: 30px 0;
+    }
+    .btn-danger {
+      background: #f44336;
+      color: white;
+    }
+    .btn-danger:hover {
+      background: #d32f2f;
+    }
+    .total-count {
+      font-size: 24px;
+      font-weight: bold;
+      color: #d32f2f;
+    }
+  </style>
+{% endblock %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+  <a href="{% url 'admin:index' %}">{% translate 'Home' %}</a>
+  &rsaquo; <a href="{% url 'admin:app_list' app_label=opts.app_label %}">{{ opts.app_config.verbose_name }}</a>
+  &rsaquo; <a href="{% url opts|admin_urlname:'changelist' %}">{{ opts.verbose_name_plural|capfirst }}</a>
+  &rsaquo; {% translate 'Bulk Delete' %}
+</div>
+{% endblock %}
+
+{% block content %}
+<div id="content-main">
+  <div class="delete-warning">
+    <h2>⚠️ {% translate 'WARNING: Multiple Databases Will Be Permanently Deleted' %}</h2>
+    
+    <p><strong>{% translate 'You are about to delete multiple database tenants.' %}</strong></p>
+    
+    <p class="total-count">
+      {% blocktranslate with count=total_count %}{{ count }} tenants selected for deletion{% endblocktranslate %}
+    </p>
+    
+    <div class="tenant-list">
+      <h3>{% translate 'The following databases will be DELETED:' %}</h3>
+      <ul>
+        {% for tenant in tenants %}
+          <li>
+            <strong>{{ tenant.name }}</strong> ({{ tenant.slug }})
+            <br>
+            <small>Database: {{ tenant.get_connection_string|default:"unknown"|cut:"/"|last }}</small>
+          </li>
+        {% endfor %}
+      </ul>
+      <p><strong>{% translate 'All data in these databases will be permanently lost.' %}</strong></p>
+    </div>
+    
+    <p style="color: #d32f2f; font-weight: bold;">
+      {% translate 'This action cannot be undone. The databases and all their data will be permanently removed from the PostgreSQL server.' %}
+    </p>
+  </div>
+
+  <form method="post">
+    {% csrf_token %}
+    
+    {# Preserve selected tenant IDs #}
+    {% for tenant in tenants %}
+      <input type="hidden" name="{{ action_checkbox_name }}" value="{{ tenant.pk }}">
+    {% endfor %}
+    <input type="hidden" name="action" value="delete_selected_tenants_with_databases">
+    <input type="hidden" name="select_across" value="0">
+    
+    <div class="confirmation-section">
+      <h3>{% translate 'Type the confirmation text to proceed:' %}</h3>
+      <p>
+        {% translate 'To confirm deletion of all selected tenants, please type:' %} 
+        <code style="background: #ffebee; padding: 5px 10px; font-weight: bold; color: #d32f2f;">{{ expected_confirmation }}</code>
+      </p>
+      
+      <input 
+        type="text" 
+        name="confirm_bulk_delete" 
+        class="confirmation-input" 
+        placeholder="{% translate 'Type the confirmation text here' %}"
+        autocomplete="off"
+        autofocus
+      >
+    </div>
+    
+    <div class="submit-row">
+      <input type="submit" class="btn btn-danger" value="{% translate 'Yes, Delete All Selected Tenants and Databases' %}">
+      <a href="{% url opts|admin_urlname:'changelist' %}" class="button cancel-link">
+        {% translate 'No, Take Me Back' %}
+      </a>
+    </div>
+  </form>
+</div>
+{% endblock %}

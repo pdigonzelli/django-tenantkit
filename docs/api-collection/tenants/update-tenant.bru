@@ -1,0 +1,30 @@
+meta {
+  name: Update Tenant
+  type: http
+  seq: 4
+}
+
+put {
+  url: {{baseUrl}}{{apiPrefix}}/tenants/{{tenantSlug}}/
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "name": "Updated Test Tenant",
+    "is_active": true
+  }
+}
+
+assert {
+  res.status: eq 200
+}
+
+vars:pre-request {
+  tenantSlug: test-tenant
+}

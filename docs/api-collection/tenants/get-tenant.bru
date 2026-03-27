@@ -1,0 +1,23 @@
+meta {
+  name: Get Tenant
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{baseUrl}}{{apiPrefix}}/tenants/{{tenantSlug}}/
+  body: none
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+assert {
+  res.status: eq 200
+}
+
+vars:pre-request {
+  tenantSlug: test-tenant
+}

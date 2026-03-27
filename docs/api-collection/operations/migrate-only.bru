@@ -1,0 +1,29 @@
+meta {
+  name: Migrate Only
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{baseUrl}}{{apiPrefix}}/tenants/{{tenantSlug}}/operations/
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "operation": "migrate_only"
+  }
+}
+
+assert {
+  res.status: eq 200
+}
+
+vars:pre-request {
+  tenantSlug: test-tenant
+}
