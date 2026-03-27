@@ -73,7 +73,7 @@ def _lazy_import(name: str):
     }
 
     if name not in module_map:
-        raise ImportError(f"Cannot import name '{name}' from 'multitenant'")
+        raise AttributeError(f"module 'multitenant' has no attribute '{name}'")
 
     module_path, attr_name = module_map[name]
     module = importlib.import_module(module_path, package=__name__)

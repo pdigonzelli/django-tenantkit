@@ -1,8 +1,8 @@
 # django-multitenant
 
 [![CI](https://github.com/pdigonzelli/django-multitenant/actions/workflows/ci.yml/badge.svg)](https://github.com/pdigonzelli/django-multitenant/actions)
-[![Python](https://img.shields.io/badge/python-3.10%20|%203.11%20|%203.12-blue)](https://pypi.org/project/django-multitenant/)
-[![Django](https://img.shields.io/badge/django-4.2%20|%205.x-green)](https://pypi.org/project/django-multitenant/)
+[![Python](https://img.shields.io/badge/python-3.12%20|%203.13-blue)](https://pypi.org/project/django-multitenant/)
+[![Django](https://img.shields.io/badge/django-6.0-green)](https://pypi.org/project/django-multitenant/)
 [![License](https://img.shields.io/badge/license-MIT-lightgrey)](LICENSE)
 
 A Django-native multitenancy framework with first-class support for **schema** and **database** isolation strategies.
@@ -266,7 +266,7 @@ Report vulnerabilities privately — see [SECURITY.md](SECURITY.md).
 
 ### Prerequisites
 
-- Python 3.10+
+- Python 3.12+
 - PostgreSQL 12+ (for schema isolation and integration tests)
 - [UV](https://github.com/astral-sh/uv) (recommended)
 
@@ -340,7 +340,7 @@ uv run pytest --cov --cov-report=html
 
 | django-multitenant | Python | Django |
 |-------------------|--------|--------|
-| 0.1.x | 3.10, 3.11, 3.12 | 4.2, 5.x |
+| 0.1.x | 3.12, 3.13 | 6.0 |
 
 Schema isolation requires PostgreSQL. Database isolation works with any Django-supported backend.
 

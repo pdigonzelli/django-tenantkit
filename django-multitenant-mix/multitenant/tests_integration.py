@@ -14,6 +14,7 @@ from django.contrib.auth import get_user_model
 from django.test import TestCase, override_settings
 
 from multitenant.models import Tenant
+from multitenant.bootstrap import unregister_database_tenant_connection
 from multitenant.provisioning import (
     database_exists,
     ensure_database_exists,
@@ -63,7 +64,10 @@ POSTGRES_AVAILABLE = _can_connect_to_postgres()
 class DatabaseProvisioningIntegrationTests(TestCase):
     """Integration tests that create real PostgreSQL databases."""
 
+    databases = "__all__"
+
     def setUp(self):
+        self._registered_aliases: set[str] = set()
         self.user = User.objects.create_user(
             username=f"testowner_{uuid.uuid4().hex[:8]}", password="secret"
         )
@@ -73,6 +77,8 @@ class DatabaseProvisioningIntegrationTests(TestCase):
 
     def tearDown(self):
         """Clean up: drop any databases and users created during tests."""
+        for alias in self._registered_aliases:
+            unregister_database_tenant_connection(alias)
         self._drop_database_if_exists(self.test_db_name)
         # Extract username from test_db_url and drop if exists (skip if it's the postgres admin)
         parsed = urlparse(self.test_db_url)
@@ -220,6 +226,8 @@ class DatabaseProvisioningIntegrationTests(TestCase):
         from django.db import connections
 
         self.assertIn(tenant.connection_alias, connections.databases)
+        if tenant.connection_alias:
+            self._registered_aliases.add(tenant.connection_alias)
 
     def test_user_exists_and_creation(self):
         """Test user existence check and creation."""
@@ -295,6 +303,8 @@ class DatabaseProvisioningIntegrationTests(TestCase):
         # Verify everything was created
         self.assertTrue(database_exists(db_url, PROVISIONING_URL))
         self.assertTrue(user_exists(db_user, PROVISIONING_URL))
+        if tenant.connection_alias:
+            self._registered_aliases.add(tenant.connection_alias)
 
     def test_provisioning_with_invalid_credentials_fails(self):
         """Verify provisioning fails gracefully with invalid credentials."""
@@ -337,6 +347,8 @@ class DatabaseProvisioningIntegrationTests(TestCase):
 @override_settings(TENANT_ENCRYPTION_KEY="integration-test-key")
 class DatabaseProvisioningCleanupTests(TestCase):
     """Tests specifically for cleanup and edge cases."""
+
+    databases = "__all__"
 
     def setUp(self):
         self.user = User.objects.create_user(

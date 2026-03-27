@@ -3,7 +3,7 @@ name = "django-multitenant"
 version = "0.1.0"
 description = "A comprehensive Django multi-tenancy solution with schema isolation, tenant-aware middleware, and flexible routing"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.12"
 license = {text = "MIT"}
 authors = [
     {name = "Pablo Digonzelli", email = "pdigonzelli@gmail.com"}
@@ -12,14 +12,11 @@ keywords = ["django", "multitenant", "multi-tenant", "saas", "postgresql", "sche
 classifiers = [
     "Development Status :: 4 - Beta",
     "Framework :: Django",
-    "Framework :: Django :: 4.2",
-    "Framework :: Django :: 5.0",
+    "Framework :: Django :: 6.0",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Topic :: Software Development :: Libraries :: Python Modules",
@@ -32,7 +29,7 @@ dependencies = [
     "psycopg[binary,pool]>=3.3.3",
 ]
 
-[project.optional-dependencies]
+[dependency-groups]
 dev = [
     "pytest>=8.0.0",
     "pytest-django>=4.5.0",
@@ -49,3 +46,8 @@ Documentation = "https://github.com/pdigonzelli/django-multitenant#readme"
 Repository = "https://github.com/pdigonzelli/django-multitenant"
 Issues = "https://github.com/pdigonzelli/django-multitenant/issues"
 Changelog = "https://github.com/pdigonzelli/django-multitenant/blob/main/CHANGELOG.md"
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "django_multitenant_mix.settings"
+python_files = ["tests.py", "test_*.py", "*_tests.py", "tests_*.py", "tests_integration.py", "tests_admin_base.py"]
+testpaths = ["multitenant"]

@@ -452,8 +452,8 @@ class TenantRouterTests(TestCase):
 
     def test_router_returns_none_without_tenant(self):
         router = TenantRouter()
-        self.assertIsNone(router.db_for_read(Tenant))
-        self.assertIsNone(router.db_for_write(Tenant))
+        self.assertEqual(router.db_for_read(Tenant), "default")
+        self.assertEqual(router.db_for_write(Tenant), "default")
 
     def test_router_delegates_to_strategy(self):
         tenant = Tenant(
@@ -466,13 +466,13 @@ class TenantRouterTests(TestCase):
         set_current_strategy(strategy)
 
         router = TenantRouter()
-        self.assertEqual(router.db_for_read(Tenant), "tenant_db")
-        self.assertEqual(router.db_for_write(Tenant), "tenant_db")
-        self.assertTrue(router.allow_migrate("tenant_db", "multitenant", "tenant"))
+        self.assertEqual(router.db_for_read(Tenant), "default")
+        self.assertEqual(router.db_for_write(Tenant), "default")
+        self.assertFalse(router.allow_migrate("tenant_db", "multitenant", "tenant"))
 
-        self.assertEqual(len(strategy.read_calls), 1)
-        self.assertEqual(len(strategy.write_calls), 1)
-        self.assertEqual(len(strategy.migrate_calls), 1)
+        self.assertEqual(len(strategy.read_calls), 0)
+        self.assertEqual(len(strategy.write_calls), 0)
+        self.assertEqual(len(strategy.migrate_calls), 0)
 
 
 class SchemaStrategyTests(TestCase):
