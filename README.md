@@ -278,7 +278,7 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 
 # Clone repository
 git clone git@github.com:pdigonzelli/django-multitenant.git
-cd django-multitenant/project
+cd django-multitenant/example
 
 # Install dependencies (creates .venv automatically)
 uv sync --dev

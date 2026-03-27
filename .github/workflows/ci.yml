@@ -25,12 +25,12 @@ jobs:
 
       - name: Install dependencies
         run: |
-          cd project
+          cd example
           uv sync --dev
 
       - name: Run Ruff
         run: |
-          cd project
+          cd example
           uv run ruff check .
 
   test:
@@ -73,14 +73,14 @@ jobs:
 
       - name: Install dependencies
         run: |
-          cd project
+          cd example
           uv sync --dev
 
       - name: Run tests
         env:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/test_db
         run: |
-          cd project
+          cd example
           uv run pytest -v --tb=short --cov=. --cov-report=html --cov-report=term
 
       - name: Upload coverage
@@ -88,4 +88,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: coverage-report
-          path: project/htmlcov/
+          path: example/htmlcov/
