@@ -1,24 +1,24 @@
-# django-multitenant-mix
+# django-tenantkit example project
 
-Sandbox de desarrollo para el framework `django-multitenant`.
+This directory contains the Django reference project for `django-tenantkit`.
 
-## Propósito
+## Purpose
 
-- iterar sobre el core del framework
-- mantener tests ejecutables con `uv`
-- servir como entorno de diseño antes de extraer el paquete reusable
+- validate the reusable package in a real Django project
+- keep an executable integration environment for local development
+- serve as the reference configuration for settings, middleware, routing, and admin wiring
 
-## Estado
+## Status
 
-Este proyecto contiene el prototipo vivo del framework multitenant.
+The reusable package now lives in `../src/tenantkit`.
+This example project exists to exercise and demonstrate that package.
 
-## Contrato actual
+## Reference documentation
 
-La documentación operativa y arquitectónica vive en el root del workspace:
+Operational and architectural documentation lives at the repository root:
 
 - `../README.md`
+- `../docs/installation.md`
+- `../docs/quickstart.md`
 - `../docs/api.md`
 - `../docs/architecture.md`
-- `../docs/session-notes.md`
-
-Este sandbox mantiene el core implementado y testeable con `uv`.

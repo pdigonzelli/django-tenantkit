@@ -6,7 +6,7 @@ This document defines the main concepts used throughout the project.
 
 The repository currently separates:
 
-- `src/multitenant`: the reusable package source
+- `src/tenantkit`: the reusable package source
 - `example/`: the reference Django project used for integration and validation
 
 ## Tenant

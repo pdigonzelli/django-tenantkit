@@ -6,7 +6,7 @@ This document describes the current repository layout and the path toward instal
 
 The repository now uses a package-first layout:
 
-- `src/multitenant` contains the reusable package
+- `src/tenantkit` contains the reusable package
 - `example/` contains the reference Django project
 - `pyproject.toml` and `uv.lock` live at the repository root
 
@@ -21,7 +21,7 @@ uv sync --dev
 The example project then runs as a consumer of the installed local package.
 
 ```bash
-uv run python example/manage.py test multitenant
+uv run python example/manage.py test tenantkit
 ```
 
 ## Planned Installation Modes
@@ -44,7 +44,7 @@ At a minimum, a Django project will need:
 - a database router
 - tenant model and isolation strategy configuration
 
-In the current repository layout, those pieces are demonstrated by the `example/` project while the package source itself lives in `src/multitenant`.
+In the current repository layout, those pieces are demonstrated by the `example/` project while the package source itself lives in `src/tenantkit`.
 
 ## Related Documents
 

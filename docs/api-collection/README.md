@@ -21,7 +21,7 @@ mv bruno_1.12.0_x86_64.AppImage ~/.local/bin/bruno
 
 ```bash
 # Open Bruno with this collection
-bruno /home/pdigonzelli/proyectos/django-multitenant/docs/api-collection/
+bruno ./docs/api-collection/
 ```
 
 Or open Bruno and select "Open Collection" → Navigate to this directory.
@@ -148,7 +148,7 @@ Some requests include post-response scripts:
 Ensure Django server is running:
 
 ```bash
-uv run python manage.py runserver 0.0.0.0:8000
+uv run python example/manage.py runserver 0.0.0.0:8000
 ```
 
 ### 403 Forbidden

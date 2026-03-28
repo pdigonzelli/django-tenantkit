@@ -1,189 +1,151 @@
-# RFC v0 - django-multitenant
+# RFC v0 - django-tenantkit
 
-## Estado
+## Status
 
-Draft
+Historical draft.
 
-## Resumen
+## Summary
 
-`django-multitenant` será un framework multitenant para Django con soporte híbrido para tenants por **schema** y por **database**, manteniendo una arquitectura nativa para Django y una separación explícita entre:
+This RFC captured the original design direction for what became `django-tenantkit`.
+The goal was to build a Django-native multitenancy framework that supports both schema-based and database-based isolation while keeping a clear separation between:
 
-- **shared/public data**
-- **tenant-local data**
+- shared or public data
+- tenant-local data
 
-El framework no usará resolución de tenant basada en domain como estrategia principal. En su lugar, priorizará:
+The design explicitly avoided a domain-first tenant resolution model as the primary strategy. Instead, it prioritized runtime resolution through:
 
-- `header`
-- `token claim`
-- `session` para Django Admin
+- headers
+- token claims
+- Django admin session state
 
-## Motivación
+## Motivation
 
-Los frameworks actuales del ecosistema Django suelen resolver uno de estos problemas, pero no ambos juntos:
+The Django ecosystem already offered strong solutions for individual parts of the multitenancy problem, but not always for all of these concerns together:
 
-- multitenancy por schema sobre PostgreSQL
-- multitenancy por database
-- integración razonable con admin y auth
+- PostgreSQL schema isolation
+- database-per-tenant isolation
+- practical integration with Django admin and authentication
 
-Este proyecto apunta a una solución más pequeña y flexible, inspirada en Django y no en una plataforma completamente distinta.
+The project direction was intentionally small, flexible, and Django-native rather than platform-like.
 
-## Objetivos
+## Early goals
 
-- soportar tenants `schema` y `database`
-- permitir tablas shared/public y tablas tenant-local
-- adaptar Django Admin para que sea tenant-aware
-- soportar un **superusuario global** y **usuarios locales por tenant**
-- diseñar un core desacoplado del framework REST
-- mantener contratos claros para estrategias, resolvers y contexto
+- support both `schema` and `database` tenants
+- allow shared/public tables and tenant-local tables
+- make Django admin tenant-aware
+- support global platform users and tenant-local users
+- keep the core decoupled from any single REST framework
+- define clear contracts for strategies, resolvers, and context handling
 
-## No objetivos iniciales
+## Non-goals at the time
 
-- no resolver tenant por domain/subdomain como estrategia principal
-- no soportar cambio de `database` a `schema` o viceversa después de crear el tenant
-- no soportar todos los motores con capacidades idénticas
-- no hacer una abstracción que esconda limitaciones reales del backend
-- no acoplar el core a FastAPI o a un framework REST específico
+- domain/subdomain tenant resolution as the main strategy
+- switching a tenant from `database` to `schema` (or the reverse) after creation
+- pretending all database backends provide identical capabilities
+- coupling the core directly to FastAPI or a specific REST adapter
 
-## Modelo conceptual
+## Conceptual model
 
-### Shared/Public
+### Shared / Public
 
-Espacio donde viven entidades globales como:
+The shared plane contains global entities such as:
 
-- registro de tenants
-- configuración global
-- superusuarios globales
-- auditoría global
-- feature flags globales
-- billing/control plane
+- tenant registry
+- global configuration
+- global operators and superusers
+- global audit trails
+- billing and control-plane concerns
 
 ### Tenant-local
 
-Espacio donde viven entidades del tenant:
+The tenant-local plane contains tenant-owned entities such as:
 
-- usuarios locales
-- permisos locales
-- datos de negocio
-- configuración interna
+- tenant users
+- local permissions
+- business data
+- tenant-specific internal configuration
 
 ### TenantSharedModel
 
-Base abstracta para modelos del dominio tenant que pueden ser:
+An important early concept was a model that could be visible to all tenants when `allowed_tenants` is empty, or restricted to a defined tenant list when that relationship is populated.
 
-- compartidos por todos los tenants, si `allowed_tenants` está vacío
-- restringidos a una lista de tenants, si `allowed_tenants` tiene valores
-
-Este contrato permite modelar SaaS con una sola abstracción de visibilidad por tenant.
-
-## Tipos de aislamiento
+## Isolation types
 
 ### Schema tenant
 
-- el tenant vive en un schema separado
-- especialmente útil en motores con soporte fuerte de schemas, como PostgreSQL
-- el switching debe ser explícito y seguro
+- the tenant lives in an isolated schema
+- especially useful on PostgreSQL
+- schema activation must be explicit and safe
 
 ### Database tenant
 
-- el tenant vive en una base o conexión aislada
-- es más portable entre motores
-- aumenta complejidad operativa, pero mejora aislamiento
-- el framework genera `connection_alias` automáticamente para que Django pueda resolver la conexión
-- almacena la URL de conexión cifrada en `connection_string`
-- puede almacenar una URL admin cifrada en `provisioning_connection_string` para crear/verificar la DB física
+- the tenant lives in a dedicated database or connection
+- this is more portable across engines
+- it increases operational complexity but improves isolation
+- the framework generates `connection_alias` automatically
+- encrypted runtime and provisioning connection strings can be stored with the tenant
 
 ### Provisioning mode
 
-- `auto`: el backend genera todos los campos estructurales
-- `manual`: el operador envía los campos estructurales requeridos por el modo elegido
+- `auto`: structural fields are generated by the framework
+- `manual`: the operator supplies the structural fields required by the selected isolation mode
 
-### metadata
+## Key design rule
 
-`metadata` es un campo JSON extensible para información futura o variable.
-No es autoritativo para las decisiones estructurales del framework.
-
-### connection_string
-
-URL de conexión cifrada para tenants database.
-
-### provisioning_connection_string
-
-URL admin cifrada para tenants database. Se usa para crear o verificar la DB física en el servidor destino.
-
-### Zero-config rule
-
-El framework genera automáticamente la configuración estructural del tenant a partir del `slug` y la estrategia seleccionada.
-
-### Sandbox note
-
-El bootstrap automático de conexiones no se ejecuta en el sandbox SQLite; está pensado para backends de base de datos reales.
-
-### Zero-config status
-
-El prototipo actual genera automáticamente `schema_name`, `connection_alias` y `connection_string` a partir del `slug`.
-
-### API status
-
-Existe una API nativa en `/api/tenants/` para crear, listar, obtener y borrar tenants.
-
-## Decisión de diseño clave
-
-El core será **agnóstico de estrategia**, pero no fingirá que todos los motores tienen las mismas capacidades.
-
-Se seguirá la regla:
+The core should be strategy-agnostic without pretending all backends behave the same way.
 
 > **portable core, specialized backends**
 
-## Resolución de tenant
+## Tenant resolution
 
-### Estrategias soportadas
+The original supported resolver directions were:
 
 - `HeaderTenantResolver`
 - `TokenTenantResolver`
 - `SessionTenantResolver`
 
-### Prioridad sugerida
+The intended priority was:
 
-#### API
+### API
 1. token claim
 2. header
-3. validación cruzada si ambos están presentes
+3. cross-validation if both are present
 
-#### Admin
+### Admin
 1. session
 
-## Admin de Django
+## Django admin direction
 
-Se usará un solo `/admin/`, con dos modos de operación:
+The design called for a single `/admin/` entry point with two operating modes:
 
-### Modo global
+### Global mode
 
-- login sin tenant seleccionado
-- acceso solo a modelos shared/public
-- orientado al superusuario global y operadores globales
+- no tenant selected
+- access only to shared/public models
+- intended for platform operators and global superusers
 
-### Modo tenant
+### Tenant mode
 
-- login con tenant seleccionado, o switch posterior desde modo global
-- acceso a modelos tenant-local
-- aplica contexto activo de tenant vía sesión
+- a tenant selected at login time or switched from global mode
+- access to tenant-local models
+- active tenant context applied through session state
 
-## Autenticación
+## Authentication direction
 
-### Global
+### Global users
 
-- usuarios del sistema/plataforma
-- viven en shared/public
-- pueden operar en modo global
-- pueden cambiar al contexto de un tenant con trazabilidad
+- platform-level users
+- live in the shared/public plane
+- can operate in global mode
+- can switch into tenant context with auditability
 
-### Tenant-local
+### Tenant-local users
 
-- usuarios del tenant/organización
-- viven dentro del espacio aislado del tenant
-- deben autenticarse con tenant explícito
+- tenant or organization users
+- live inside the isolated tenant space
+- authenticate with an explicit tenant context
 
-## Contratos base propuestos
+## Proposed core contracts
 
 - `TenantContext`
 - `TenantResolver`
@@ -193,30 +155,9 @@ Se usará un solo `/admin/`, con dos modos de operación:
 - `TenantAuthService`
 - `TenantSharedModel`
 
-## Estado de implementación
+## Observability direction
 
-Prototipo actual:
-
-- `Tenant` con soft delete, auditoría y auto-generación de aislamiento
-- `TenantMembership`, `TenantInvitation`, `TenantSetting`
-- `TenantRouter`
-- `TenantMiddleware`
-- `SchemaStrategy`
-- `DatabaseStrategy`
-- auto-provision and registry management for database tenant aliases
-
-## Regla sobre metadata
-
-`metadata` es extensible pero no autoritativo. Los campos estructurales del contrato principal viven en campos explícitos.
-
-## Observabilidad
-
-Desde etapas tempranas se deben contemplar:
-
-- logging estructurado con `tenant_id`, `scope`, `user_id`
-- métricas tipo Prometheus
-
-Métricas sugeridas:
+The RFC also proposed structured logging and Prometheus-friendly metrics from early stages, including metrics such as:
 
 - `tenant_resolution_total`
 - `tenant_resolution_errors_total`
@@ -225,41 +166,21 @@ Métricas sugeridas:
 - `admin_tenant_switch_total`
 - `tenant_middleware_duration_seconds`
 
-## Testing
+## Testing direction
 
-### Unit tests
+The early testing plan covered:
 
-- resolución de tenant
-- contexto activo
-- validación de capacidades
-- selección de estrategia
-- login global y login tenant
+- tenant resolution
+- active context handling
+- backend capability validation
+- strategy selection
+- global and tenant-local authentication
+- admin global vs tenant mode
+- schema/database switching
+- tenant isolation
+- security cases such as header spoofing and context leakage
 
-### Integration tests
+## Historical note
 
-- request global vs request tenant
-- admin global vs admin tenant
-- switching schema/database
-- aislamiento entre tenants
-
-### Security tests
-
-- spoofing de header
-- conflicto entre token y header
-- fuga de contexto entre requests
-- acceso a modelos tenant sin contexto válido
-
-## REST framework
-
-El framework REST no debe definir el core.
-
-Recomendación actual:
-
-- **DRF como primer adapter**
-- mantener el diseño listo para soportar Ninja en una fase posterior
-
-## Referencias conceptuales
-
-- Django 6 documentation sobre auth y admin
-- `django-tenants` como referencia de separación entre `public` y `tenant-specific data`
-- `django-tenant-schemas` como antecedente de estrategias alternativas por header/middleware
+This document is kept as a historical design reference.
+The current implementation may differ from some of these early ideas, but the RFC still explains the original architectural intent behind `django-tenantkit`.

@@ -126,7 +126,7 @@ You provide the structural values, and the framework validates, encrypts, and re
 
 ### Creating a Database Tenant (Manual Mode)
 
-1. Go to `/admin/multitenant/tenant/add/`
+1. Go to `/admin/tenantkit/tenant/add/`
 2. Fill in basic information:
    - **Slug**: `acme-corp` (unique identifier)
    - **Name**: `Acme Corporation`
@@ -560,12 +560,12 @@ tenant.user.exists: {"user": "app_user"}
 
 Using `uv` (recommended):
 ```bash
-uv run python manage.py test multitenant.tests
+uv run python manage.py test tenantkit.tests
 ```
 
 Or with standard Python:
 ```bash
-python manage.py test multitenant.tests
+python manage.py test tenantkit.tests
 ```
 
 ### Run Integration Tests
@@ -582,7 +582,7 @@ docker run -d --name demo-tenants \
   postgres:latest
 
 # Run integration tests with uv
-uv run python manage.py test multitenant.tests_integration
+uv run python manage.py test tenantkit.tests_integration
 ```
 
 ### Environment Variables for Tests

@@ -8,7 +8,7 @@ The current stable test command is:
 
 ```bash
 uv sync --dev
-uv run python example/manage.py test multitenant
+uv run python example/manage.py test tenantkit
 ```
 
 ## Integration Tests
@@ -18,7 +18,7 @@ Some integration tests require PostgreSQL to be available.
 ## Current Notes
 
 - the example project is the current test harness
-- the reusable package lives in `src/multitenant`
+- the reusable package lives in `src/tenantkit`
 - Django's test runner is the current stable path
 - the repository also contains integration-oriented test coverage for provisioning behavior
 

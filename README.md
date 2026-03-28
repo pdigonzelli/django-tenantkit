@@ -41,7 +41,7 @@ See [Concepts](docs/concepts.md) for the model vocabulary and architectural term
 ## Installation
 
 This repository now uses a package-first layout.
-The reusable package lives under `src/multitenant`, while `example/` contains the reference Django project.
+The reusable package lives under `src/tenantkit`, while `example/` contains the reference Django project.
 The final public package name and distribution workflow are still under review.
 
 For the current setup and integration path, see:
@@ -62,7 +62,7 @@ At a high level, a Django project using the framework will:
 5. create one or more tenants
 6. run the appropriate migration workflow
 
-The current reference Django project lives in `example/`, while the package source lives in `src/multitenant`.
+The current reference Django project lives in `example/`, while the package source lives in `src/tenantkit`.
 
 For the guided flow, see [Quickstart](docs/quickstart.md).
 
@@ -74,7 +74,7 @@ The current stable validation path is:
 
 ```bash
 uv sync --dev
-uv run python example/manage.py test multitenant
+uv run python example/manage.py test tenantkit
 ```
 
 For local development, the repository is managed from the root and the example project acts as a consumer of the package.
@@ -92,7 +92,7 @@ It currently serves as:
 - the test harness
 - the reference wiring for settings, middleware, routing, and admin behavior
 
-The reusable package itself lives in `src/multitenant`.
+The reusable package itself lives in `src/tenantkit`.
 
 See [Example Project](docs/example.md).
 

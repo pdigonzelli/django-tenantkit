@@ -1,8 +1,8 @@
 """
-Example: Using the django-multitenant model configuration system.
+Example: Using the django-tenantkit model configuration system.
 
 This file demonstrates how to define shared and tenant models using
-the decorators provided by django-multitenant.
+the decorators provided by django-tenantkit.
 
 Note: Mixins (SharedModel, TenantModel) were removed due to Django
 AppRegistryNotReady issues. Use decorators instead.
@@ -11,12 +11,13 @@ AppRegistryNotReady issues. Use decorators instead.
 from django.db import models
 
 # Import the decorators
-from multitenant import shared_model, tenant_model
+from tenantkit import shared_model, tenant_model
 
 
 # ============================================================================
 # DEFINING SHARED MODELS (Global/Default Database)
 # ============================================================================
+
 
 @shared_model
 class User(models.Model):
@@ -24,6 +25,7 @@ class User(models.Model):
     A shared model - stored in the default database.
     Accessible across all tenants.
     """
+
     email = models.EmailField(unique=True)
     first_name = models.CharField(max_length=100)
     last_name = models.CharField(max_length=100)
@@ -41,6 +43,7 @@ class GlobalSetting(models.Model):
     """
     Another shared model for global application settings.
     """
+
     key = models.CharField(max_length=100, unique=True)
     value = models.JSONField(default=dict)
 
@@ -54,6 +57,7 @@ class AuditLog(models.Model):
     Shared model with auto_migrate disabled.
     You'll need to migrate this manually.
     """
+
     action = models.CharField(max_length=50)
     timestamp = models.DateTimeField(auto_now_add=True)
     user_email = models.EmailField()
@@ -66,12 +70,14 @@ class AuditLog(models.Model):
 # DEFINING TENANT MODELS (Tenant-Specific Schema or Database)
 # ============================================================================
 
+
 @tenant_model
 class Product(models.Model):
     """
     A tenant model - stored in tenant-specific schema or database.
     Each tenant has their own isolated products.
     """
+
     name = models.CharField(max_length=200)
     sku = models.CharField(max_length=50)
     price = models.DecimalField(max_digits=10, decimal_places=2)
@@ -91,6 +97,7 @@ class Category(models.Model):
     This means you can query it without a tenant context,
     but it will return data from all tenants (use with caution!).
     """
+
     name = models.CharField(max_length=100)
     description = models.TextField(blank=True)
 
@@ -103,6 +110,7 @@ class Order(models.Model):
     """
     Another tenant model - orders are isolated per tenant.
     """
+
     customer_email = models.EmailField()
     total_amount = models.DecimalField(max_digits=12, decimal_places=2)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -126,6 +134,7 @@ class OrderItem(models.Model):
     """
     Tenant model related to Order.
     """
+
     order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name="items")
     product_sku = models.CharField(max_length=50)
     quantity = models.IntegerField()
@@ -139,12 +148,12 @@ class OrderItem(models.Model):
 # QUERYING THE MODELS
 # ============================================================================
 
+
 def example_queries():
     """
     Examples of how to query shared and tenant models.
     """
-    from multitenant.middleware import set_current_tenant
-    from multitenant.models import Tenant
+    from tenantkit import Tenant, set_current_tenant
 
     # --- Shared Models ---
     # These work normally, no tenant context needed
@@ -163,7 +172,7 @@ def example_queries():
     orders = Order.objects.filter(status="pending")
 
     # Option 2: Use hints in queries (advanced)
-    # from multitenant.core.context import tenant_context
+    # from tenantkit.core.context import tenant_context
     # with tenant_context(tenant):
     #     products = Product.objects.all()
 
@@ -224,11 +233,12 @@ $ python manage.py tenant_migrate --dry-run
 # MODEL REGISTRY API (Advanced Usage)
 # ============================================================================
 
+
 def registry_api_examples():
     """
     Examples of using the ModelRegistry API directly.
     """
-    from multitenant.model_config import ModelRegistry, get_models_for_migration
+    from tenantkit.model_config import ModelRegistry, get_models_for_migration
 
     # Check if a model is registered
     is_shared = ModelRegistry.is_shared_model(User)
@@ -264,7 +274,7 @@ Complete example of an e-commerce app with shared and tenant models:
 
 # models.py
 from django.db import models
-from multitenant import shared_model, tenant_model
+from tenantkit import shared_model, tenant_model
 
 # SHARED MODELS (global database)
 @shared_model
@@ -275,7 +285,7 @@ class User(models.Model):
 
 @shared_model
 class TenantConfig(models.Model):
-    tenant = models.OneToOneField("multitenant.Tenant", on_delete=models.CASCADE)
+    tenant = models.OneToOneField("tenantkit.Tenant", on_delete=models.CASCADE)
     plan = models.CharField(max_length=20)  # free, basic, premium
     max_products = models.IntegerField(default=100)
 

@@ -15,7 +15,7 @@ Implemented a model configuration system that allows developers to mark Django m
 
 ## Implementation
 
-### 1. Core Module: `multitenant/model_config.py`
+### 1. Core Module: `tenantkit/model_config.py`
 
 **Components:**
 - `ModelRegistry`: Global registry tracking all shared and tenant models
@@ -81,18 +81,18 @@ python manage.py tenant_migrate --type=tenant --tenant=acme-corp
 python manage.py tenant_migrate --type=shared --plan
 ```
 
-### 3. Updated Router: `multitenant/routers/tenant.py`
+### 3. Updated Router: `tenantkit/routers/tenant.py`
 
 Enhanced to use the model registry:
 - Routes shared models to default database
 - Routes tenant models to tenant-specific database/schema
 - Checks `allow_global_queries` option for tenant models
 
-### 4. Package Exports: `multitenant/__init__.py`
+### 4. Package Exports: `tenantkit/__init__.py`
 
 Uses lazy imports to avoid circular import issues:
 ```python
-from multitenant import shared_model, tenant_model, ModelRegistry
+from tenantkit import shared_model, tenant_model, ModelRegistry
 ```
 
 ---
@@ -103,7 +103,7 @@ from multitenant import shared_model, tenant_model, ModelRegistry
 
 ```python
 from django.db import models
-from multitenant import shared_model
+from tenantkit import shared_model
 
 @shared_model
 class User(models.Model):
@@ -120,7 +120,7 @@ class AuditLog(models.Model):
 
 ```python
 from django.db import models
-from multitenant import tenant_model
+from tenantkit import tenant_model
 
 @tenant_model
 class Product(models.Model):
@@ -135,7 +135,7 @@ class Category(models.Model):
 ### Using the Registry API
 
 ```python
-from multitenant.model_config import ModelRegistry
+from tenantkit.model_config import ModelRegistry
 
 # Check model type
 is_shared = ModelRegistry.is_shared_model(User)
@@ -157,14 +157,14 @@ print(config["auto_migrate"])  # True
 
 ## Models Registered
 
-The following multitenant models are now registered as **shared**:
+The following tenantkit models are now registered as **shared**:
 
 | Model | Table | Type |
 |-------|-------|------|
-| `Tenant` | `multitenant_tenant` | shared |
-| `TenantMembership` | `multitenant_tenantmembership` | shared |
-| `TenantInvitation` | `multitenant_tenantinvitation` | shared |
-| `TenantSetting` | `multitenant_tenantsetting` | shared |
+| `Tenant` | `tenantkit_tenant` | shared |
+| `TenantMembership` | `tenantkit_tenantmembership` | shared |
+| `TenantInvitation` | `tenantkit_tenantinvitation` | shared |
+| `TenantSetting` | `tenantkit_tenantsetting` | shared |
 
 ---
 
@@ -193,7 +193,7 @@ The `SharedModel` and `TenantModel` mixins were removed because they caused `App
 **Solution:** Use decorators only (`@shared_model`, `@tenant_model`).
 
 ### Lazy Imports
-The `multitenant/__init__.py` uses `__getattr__` for lazy imports of components that need Django to be ready (models, middleware, etc.). This prevents circular import issues during startup.
+The `tenantkit/__init__.py` uses `__getattr__` for lazy imports of components that need Django to be ready (models, middleware, etc.). This prevents circular import issues during startup.
 
 ---
 
@@ -209,17 +209,17 @@ The `multitenant/__init__.py` uses `__getattr__` for lazy imports of components 
 ## Files Modified/Created
 
 ### New Files:
-- `multitenant/model_config.py` - Core registry and decorators
-- `multitenant/management/commands/list_tenant_models.py`
-- `multitenant/management/commands/tenant_makemigrations.py`
-- `multitenant/management/commands/tenant_migrate.py`
+- `tenantkit/model_config.py` - Core registry and decorators
+- `tenantkit/management/commands/list_tenant_models.py`
+- `tenantkit/management/commands/tenant_makemigrations.py`
+- `tenantkit/management/commands/tenant_migrate.py`
 - `docs/model_config_example.py` - Usage examples
 - `docs/MODEL_CONFIG_IMPLEMENTATION.md` - This document
 
 ### Modified Files:
-- `multitenant/__init__.py` - Added lazy imports
-- `multitenant/models.py` - Added decorators to models
-- `multitenant/routers/tenant.py` - Updated to use registry
+- `tenantkit/__init__.py` - Added lazy imports
+- `tenantkit/models.py` - Added decorators to models
+- `tenantkit/routers/tenant.py` - Updated to use registry
 
 ---
 

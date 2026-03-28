@@ -6,12 +6,12 @@ This guide describes the shortest path to understanding how the package is wired
 
 The current reference environment uses:
 
-- `src/multitenant` as the reusable package source
+- `src/tenantkit` as the reusable package source
 - `example/` as the Django integration project
 
 ```bash
 uv sync --dev
-uv run python example/manage.py test multitenant
+uv run python example/manage.py test tenantkit
 ```
 
 ## Minimal Integration Shape
@@ -38,7 +38,7 @@ The framework currently exposes concepts such as:
 - tenant provisioning
 - tenant-aware admin behavior
 
-The source code for those capabilities lives in `src/multitenant`.
+The source code for those capabilities lives in `src/tenantkit`.
 
 ## Next Reading
 
