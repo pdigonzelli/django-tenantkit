@@ -186,7 +186,7 @@ wheels = [
 [[package]]
 name = "django-multitenant"
 version = "0.1.0"
-source = { virtual = "." }
+source = { editable = "." }
 dependencies = [
     { name = "django" },
     { name = "django-extensions" },

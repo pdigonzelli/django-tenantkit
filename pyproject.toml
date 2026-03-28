@@ -1,3 +1,7 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "django-multitenant"
 version = "0.1.0"
@@ -47,7 +51,14 @@ Repository = "https://github.com/pdigonzelli/django-multitenant"
 Issues = "https://github.com/pdigonzelli/django-multitenant/issues"
 Changelog = "https://github.com/pdigonzelli/django-multitenant/blob/main/CHANGELOG.md"
 
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["multitenant", "multitenant.*"]
+
 [tool.pytest.ini_options]
 DJANGO_SETTINGS_MODULE = "config.settings"
 python_files = ["tests.py", "test_*.py", "*_tests.py", "tests_*.py", "tests_integration.py", "tests_admin_base.py"]
-testpaths = ["multitenant"]
+testpaths = ["src/multitenant"]
