@@ -12,7 +12,7 @@ license = "MIT"
 authors = [
     {name = "Pablo Digonzelli", email = "pdigonzelli@gmail.com"}
 ]
-keywords = ["django", "tenantkit", "multi-tenant", "saas", "postgresql", "schema"]
+keywords = ["django", "tenantkit", "tenant", "multitenancy", "multi-tenant", "saas", "postgresql", "schema"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Framework :: Django",

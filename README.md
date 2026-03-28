@@ -34,20 +34,19 @@ The framework currently supports two primary isolation modes:
 
 The shared/public control plane remains separate from tenant-scoped runtime behavior.
 
-See [Concepts](docs/concepts.md) for the model vocabulary and architectural terms.
+See [Concepts](https://github.com/pdigonzelli/django-tenantkit/blob/main/docs/concepts.md) for the model vocabulary and architectural terms.
 
 ---
 
 ## Installation
 
-This repository now uses a package-first layout.
+This repository uses a package-first layout.
 The reusable package lives under `src/tenantkit`, while `example/` contains the reference Django project.
-The final public package name and distribution workflow are still under review.
 
 For the current setup and integration path, see:
 
-- [Installation](docs/installation.md)
-- [Quickstart](docs/quickstart.md)
+- [Installation](https://github.com/pdigonzelli/django-tenantkit/blob/main/docs/installation.md)
+- [Quickstart](https://github.com/pdigonzelli/django-tenantkit/blob/main/docs/quickstart.md)
 
 ---
 
@@ -64,7 +63,7 @@ At a high level, a Django project using the framework will:
 
 The current reference Django project lives in `example/`, while the package source lives in `src/tenantkit`.
 
-For the guided flow, see [Quickstart](docs/quickstart.md).
+For the guided flow, see [Quickstart](https://github.com/pdigonzelli/django-tenantkit/blob/main/docs/quickstart.md).
 
 ---
 
@@ -79,7 +78,7 @@ uv run python example/manage.py test tenantkit
 
 For local development, the repository is managed from the root and the example project acts as a consumer of the package.
 
-See [Testing](docs/testing.md) for the current testing entrypoints.
+See [Testing](https://github.com/pdigonzelli/django-tenantkit/blob/main/docs/testing.md) for the current testing entrypoints.
 
 ---
 
@@ -94,7 +93,7 @@ It currently serves as:
 
 The reusable package itself lives in `src/tenantkit`.
 
-See [Example Project](docs/example.md).
+See [Example Project](https://github.com/pdigonzelli/django-tenantkit/blob/main/docs/example.md).
 
 ---
 
@@ -102,21 +101,21 @@ See [Example Project](docs/example.md).
 
 Public documentation:
 
-- [Installation](docs/installation.md)
-- [Quickstart](docs/quickstart.md)
-- [Concepts](docs/concepts.md)
-- [Commands](docs/commands.md)
-- [Provisioning](docs/provisioning.md)
-- [Testing](docs/testing.md)
-- [Example Project](docs/example.md)
-- [API Reference](docs/api.md)
+- [Installation](https://github.com/pdigonzelli/django-tenantkit/blob/main/docs/installation.md)
+- [Quickstart](https://github.com/pdigonzelli/django-tenantkit/blob/main/docs/quickstart.md)
+- [Concepts](https://github.com/pdigonzelli/django-tenantkit/blob/main/docs/concepts.md)
+- [Commands](https://github.com/pdigonzelli/django-tenantkit/blob/main/docs/commands.md)
+- [Provisioning](https://github.com/pdigonzelli/django-tenantkit/blob/main/docs/provisioning.md)
+- [Testing](https://github.com/pdigonzelli/django-tenantkit/blob/main/docs/testing.md)
+- [Example Project](https://github.com/pdigonzelli/django-tenantkit/blob/main/docs/example.md)
+- [API Reference](https://github.com/pdigonzelli/django-tenantkit/blob/main/docs/api.md)
 
 Technical and architectural material:
 
-- [Architecture](docs/architecture.md)
-- [Model Configuration Implementation](docs/MODEL_CONFIG_IMPLEMENTATION.md)
-- [Auth and Admin](docs/auth-and-admin.md)
-- [ADRs](docs/adr/)
+- [Architecture](https://github.com/pdigonzelli/django-tenantkit/blob/main/docs/architecture.md)
+- [Model Configuration Implementation](https://github.com/pdigonzelli/django-tenantkit/blob/main/docs/MODEL_CONFIG_IMPLEMENTATION.md)
+- [Auth and Admin](https://github.com/pdigonzelli/django-tenantkit/blob/main/docs/auth-and-admin.md)
+- [ADRs](https://github.com/pdigonzelli/django-tenantkit/tree/main/docs/adr)
 
 ---
 
@@ -140,7 +139,6 @@ Current transition goals include:
 - refining the public documentation structure
 - stabilizing the new package-first repository layout
 - keeping the `example/` project as the reference integration environment
-- reviewing the final public package and repository naming before release
 
 ---
 
