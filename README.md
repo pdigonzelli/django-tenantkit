@@ -1,8 +1,8 @@
-# django-multitenant
+# django-tenantkit
 
 [![CI](https://github.com/pdigonzelli/django-multitenant/actions/workflows/ci.yml/badge.svg)](https://github.com/pdigonzelli/django-multitenant/actions)
-[![Python](https://img.shields.io/badge/python-3.12%20|%203.13-blue)](https://pypi.org/project/django-multitenant/)
-[![Django](https://img.shields.io/badge/django-6.0-green)](https://pypi.org/project/django-multitenant/)
+[![Python](https://img.shields.io/badge/python-3.12%20|%203.13-blue)](https://pypi.org/project/django-tenantkit/)
+[![Django](https://img.shields.io/badge/django-6.0-green)](https://pypi.org/project/django-tenantkit/)
 [![License](https://img.shields.io/badge/license-MIT-lightgrey)](LICENSE)
 
 A Django-native multitenancy framework focused on explicit isolation strategies, clear shared-versus-tenant boundaries, and integration with Django middleware, routing, admin, and provisioning workflows.

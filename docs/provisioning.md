@@ -1,6 +1,6 @@
 # Database Provisioning Guide
 
-This guide explains how database provisioning works in `django-multitenant` and how to use it effectively.
+This guide explains how database provisioning works in `django-tenantkit` and how to use it effectively.
 
 ## Overview
 

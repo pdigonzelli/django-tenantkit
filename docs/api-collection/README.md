@@ -1,6 +1,6 @@
-# Bruno API Collection for django-multitenant
+# Bruno API Collection for django-tenantkit
 
-This directory contains a [Bruno](https://www.usebruno.com/) collection for testing the django-multitenant API.
+This directory contains a [Bruno](https://www.usebruno.com/) collection for testing the django-tenantkit API.
 
 ## Installation
 
@@ -192,4 +192,4 @@ git commit -m "Add Bruno API collection"
 
 - [Bruno Documentation](https://docs.usebruno.com/)
 - [Bruno GitHub](https://github.com/usebruno/bruno)
-- [django-multitenant API Docs](../api.md)
+- [django-tenantkit API Docs](../api.md)

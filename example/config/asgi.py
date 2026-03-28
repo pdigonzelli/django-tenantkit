@@ -1,5 +1,5 @@
 """
-ASGI config for the django-multitenant project.
+ASGI config for the django-tenantkit example project.
 
 It exposes the ASGI callable as a module-level variable named ``application``.
 

@@ -1,5 +1,5 @@
 """
-django-multitenant: A hybrid multitenant Django framework.
+django-tenantkit: A hybrid multitenant Django framework.
 
 This package provides tools for building multitenant Django applications
 with support for both schema-based and database-based isolation.
