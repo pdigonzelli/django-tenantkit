@@ -5,394 +5,152 @@
 [![Django](https://img.shields.io/badge/django-6.0-green)](https://pypi.org/project/django-multitenant/)
 [![License](https://img.shields.io/badge/license-MIT-lightgrey)](LICENSE)
 
-A Django-native multitenancy framework with first-class support for **schema** and **database** isolation strategies.
+A Django-native multitenancy framework focused on explicit isolation strategies, clear shared-versus-tenant boundaries, and integration with Django middleware, routing, admin, and provisioning workflows.
 
 ---
 
-## Why django-multitenant?
+## Why this package?
 
-Existing solutions in the Django ecosystem solve parts of the problem:
+Multi-tenant Django systems often need different trade-offs depending on scale, operational model, and isolation requirements.
+Some solutions focus primarily on PostgreSQL schema isolation, while others assume a narrower routing or provisioning model.
 
-- Some support schema isolation but are PostgreSQL-only by design
-- Some support database isolation but lack Django Admin integration
-- None offer a clean separation between shared/public data and tenant-local data with a composable resolver pipeline
+This project aims to provide a more flexible foundation for Django applications that need:
 
-`django-multitenant` is a smaller, more flexible alternative — built on Django idioms, not on top of a parallel platform.
-
----
-
-## Vision
-
-`django-multitenant` seeks to provide a native Django foundation supporting two forms of tenant isolation:
-
-- **schema-tenant** (PostgreSQL schemas)
-- **database-tenant** (separate databases, any backend)
-
-The framework aligns with Django's philosophy:
-
-- Clean integration with ORM, middleware, and admin
-- Clear separation between **shared/public** data and **tenant-local** data
-- Minimal implicit magic
-- Extensibility through explicit contracts and strategies
+- explicit tenant isolation strategies
+- clear separation between shared/public and tenant-scoped data
+- Django-native integration points instead of a parallel platform model
+- a path toward a reusable package plus a reference example project
 
 ---
 
-## Features
+## Supported isolation strategies
 
-- **Dual isolation strategies** — `schema` (PostgreSQL) and `database` (any backend)
-- **Zero-config tenant provisioning** — auto-generates `schema_name`, `connection_alias`, and `connection_string` from the tenant slug
-- **Model registry with decorators** — `@shared_model` and `@tenant_model` to declare data ownership explicitly
-- **Tenant-aware Django Admin** — single `/admin/` with global mode and per-tenant mode, switchable from the UI
-- **Encrypted connection strings** — `connection_string` and `provisioning_connection_string` stored encrypted at rest (AES-256-CBC)
-- **Soft delete** — all tenant catalog models support soft delete with restore
-- **Strategy Pattern for provisioning** — `SQLiteProvisioningStrategy` and `PostgreSQLProvisioningStrategy` with full user/permission management
-- **DRF adapter** — REST API at `/api/tenants/` out of the box
-- **OpenAPI 3.0 docs** — Swagger UI and ReDoc included via drf-spectacular
-- **Comprehensive test suite** — 54 tests (42 unit + 12 integration) against real PostgreSQL
+The framework currently supports two primary isolation modes:
+
+| Strategy | Description | Best fit |
+|---|---|---|
+| `schema` | Multiple PostgreSQL schemas inside one shared database | Shared infrastructure with strong logical isolation |
+| `database` | A dedicated database per tenant | Stronger operational isolation and backend flexibility |
+
+The shared/public control plane remains separate from tenant-scoped runtime behavior.
+
+See [Concepts](docs/concepts.md) for the model vocabulary and architectural terms.
 
 ---
 
 ## Installation
 
-```bash
-pip install django-multitenant
-```
+This repository now uses a package-first layout.
+The reusable package lives under `src/multitenant`, while `example/` contains the reference Django project.
+The final public package name and distribution workflow are still under review.
 
-Add to `INSTALLED_APPS`:
+For the current setup and integration path, see:
 
-```python
-INSTALLED_APPS = [
-    ...
-    "multitenant",
-]
-```
-
-Add the middleware:
-
-```python
-MIDDLEWARE = [
-    ...
-    "multitenant.middleware.TenantMiddleware",
-]
-```
-
-Add the database router:
-
-```python
-DATABASE_ROUTERS = ["multitenant.routers.tenant.TenantRouter"]
-```
-
-Run migrations:
-
-```bash
-python manage.py migrate
-```
+- [Installation](docs/installation.md)
+- [Quickstart](docs/quickstart.md)
 
 ---
 
-## Quick Start
+## Minimal quickstart
 
-### 1. Define your models
+At a high level, a Django project using the framework will:
 
-Use decorators to mark models as shared (global) or tenant (isolated):
+1. add the multitenancy app to `INSTALLED_APPS`
+2. add tenant-aware middleware
+3. add the tenant database router
+4. define shared and tenant-scoped models
+5. create one or more tenants
+6. run the appropriate migration workflow
 
-```python
-from django.db import models
-from multitenant import shared_model, tenant_model
+The current reference Django project lives in `example/`, while the package source lives in `src/multitenant`.
 
-@shared_model
-class User(models.Model):
-    """Shared across all tenants - stored in default database"""
-    email = models.EmailField(unique=True)
-    first_name = models.CharField(max_length=100)
-
-@tenant_model
-class Product(models.Model):
-    """Isolated per tenant - stored in tenant schema/database"""
-    name = models.CharField(max_length=200)
-    price = models.DecimalField(max_digits=10, decimal_places=2)
-```
-
-### 2. Create a tenant
-
-```python
-from multitenant.models import Tenant
-
-# Schema tenant (PostgreSQL) - auto provisioning
-tenant = Tenant.objects.create(
-    slug="acme-corp",
-    name="Acme Corporation",
-    isolation_mode="schema",
-    provisioning_mode="auto",
-)
-# → automatically generates schema_name="tenant_acme_corp"
-
-# Database tenant (any backend) - manual provisioning
-tenant = Tenant.objects.create(
-    slug="globex",
-    name="Globex Corporation",
-    isolation_mode="database",
-    provisioning_mode="manual",
-    connection_alias="globex_db",
-    connection_string="postgresql://app:pass@host/globex",
-    provisioning_connection_string="postgresql://admin:pass@host/postgres",
-)
-# → creates physical database, user, and permissions automatically
-```
-
-### 3. Query tenant data
-
-```python
-from multitenant.middleware import set_current_tenant
-
-# Set tenant context
-tenant = Tenant.objects.get(slug="acme-corp")
-set_current_tenant(tenant)
-
-# All queries to tenant models are automatically scoped
-products = Product.objects.all()  # Only acme-corp's products
-```
+For the guided flow, see [Quickstart](docs/quickstart.md).
 
 ---
 
-## Isolation Modes
+## Official test command
 
-| Mode | Isolation Unit | Best For | Provisioning |
-|------|----------------|----------|--------------|
-| `schema` | PostgreSQL schema per tenant | Shared infrastructure, strong isolation | Auto or Manual |
-| `database` | Dedicated DB + connection alias | Cross-server, maximum isolation | Auto (SQLite) or Manual |
-
-### Provisioning Modes
-
-| Mode | Required Fields | Generated Fields | Use Case |
-|------|-----------------|------------------|----------|
-| `auto` | `slug`, `name`, `isolation_mode` | `schema_name` or `connection_alias` + `connection_string` | Quick setup, SQLite |
-| `manual` | All structural fields | None | Production, PostgreSQL/MySQL/Oracle |
-
-**Important:** `database + auto` only works for SQLite. For PostgreSQL, MySQL, MariaDB, Oracle, and other server-based databases, use `database + manual`.
-
----
-
-## Tenant Resolution
-
-Configure how tenants are identified per request:
-
-```python
-# settings.py
-MULTITENANT_RESOLVERS = [
-    "multitenant.resolvers.HeaderTenantResolver",   # X-Tenant-ID header
-    "multitenant.resolvers.TokenTenantResolver",    # JWT claim
-    "multitenant.resolvers.SessionTenantResolver",  # Session (for admin)
-]
-```
-
----
-
-## Tenant-Aware Admin
-
-A single `/admin/` operates in two modes:
-
-- **Global mode** — shows shared/public models (Tenant catalog, users, etc.)
-- **Tenant mode** — shows tenant-local models, switchable from `/admin/tenant-switch/`
-
-```python
-# Admin automatically filters based on current tenant context
-# Superusers can switch between global and tenant modes
-```
-
----
-
-## Management Commands
+The current stable validation path is:
 
 ```bash
-# List registered models by type
-python manage.py list_tenant_models
-python manage.py list_tenant_models --type=shared
-python manage.py list_tenant_models --type=tenant --json
-
-# Create migrations per data plane
-python manage.py tenant_makemigrations --type=shared
-python manage.py tenant_makemigrations --type=tenant
-
-# Apply migrations
-python manage.py tenant_migrate --type=shared          # Migrate shared models
-python manage.py tenant_migrate --type=tenant          # Migrate all tenants
-python manage.py tenant_migrate --type=tenant --tenant=acme-corp  # Specific tenant
-```
-
----
-
-## REST API
-
-Full CRUD API for tenant management:
-
-```http
-GET    /api/tenants/              # List all tenants
-POST   /api/tenants/              # Create tenant
-GET    /api/tenants/{slug}/       # Get tenant details
-DELETE /api/tenants/{slug}/       # Soft delete tenant
-POST   /api/tenants/{slug}/operations/  # Provisioning operations
-```
-
-### OpenAPI Documentation
-
-Interactive API documentation available at:
-
-- **Swagger UI**: `http://localhost:8000/api/schema/swagger-ui/`
-- **ReDoc**: `http://localhost:8000/api/schema/redoc/`
-- **Raw Schema**: `http://localhost:8000/api/schema/`
-
-Features:
-- Auto-generated from DRF serializers
-- Interactive "Try it out" functionality
-- Request/response examples
-- Download as YAML for client generation
-
----
-
-## Security Model
-
-- **Encrypted connection strings** — All `connection_string` and `provisioning_connection_string` fields are encrypted at rest using AES-256-CBC
-- **Provisioning user** — Admin credentials used only to create DB and user; stored encrypted
-- **Application user** — Auto-created with minimal permissions (CONNECT, USAGE, CREATE, ALL on tenant schema)
-- **Tenant isolation** — Each database tenant has dedicated DB + user; cannot access other tenants
-- **Context cleanup** — Tenant context always cleaned up at request end, even on errors
-
-Report vulnerabilities privately — see [SECURITY.md](SECURITY.md).
-
----
-
-## Development Setup
-
-### Prerequisites
-
-- Python 3.12+
-- PostgreSQL 12+ (for schema isolation and integration tests)
-- [UV](https://github.com/astral-sh/uv) (recommended)
-
-### Quick Start with UV (Recommended)
-
-```bash
-# Install UV
-curl -LsSf https://astral.sh/uv/install.sh | sh
-
-# Clone repository
-git clone git@github.com:pdigonzelli/django-multitenant.git
-cd django-multitenant/example
-
-# Install dependencies (creates .venv automatically)
 uv sync --dev
-
-# Run tests
-uv run pytest
-
-# Run linter
-uv run ruff check .
-
-# Run type checker
-uv run pyright
-
-# Run development server
-uv run python manage.py runserver
+uv run python example/manage.py test multitenant
 ```
 
-### Without UV (Fallback)
+For local development, the repository is managed from the root and the example project acts as a consumer of the package.
 
-```bash
-# Create virtual environment
-python -m venv .venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-
-# Install dependencies
-pip install -e ".[dev]"
-
-# Run tests
-pytest
-
-# Run server
-python manage.py runserver
-```
-
-### Running Integration Tests
-
-Integration tests require PostgreSQL:
-
-```bash
-# Start PostgreSQL (Docker)
-docker run -d --name postgres-test \
-  -e POSTGRES_PASSWORD=postgres \
-  -p 5432:5432 \
-  postgres:16
-
-# Run all tests
-uv run pytest
-
-# Run only integration tests
-uv run pytest multitenant/tests_integration.py
-
-# Run with coverage
-uv run pytest --cov --cov-report=html
-```
+See [Testing](docs/testing.md) for the current testing entrypoints.
 
 ---
 
-## Compatibility
+## Example project
 
-| django-multitenant | Python | Django |
-|-------------------|--------|--------|
-| 0.1.x | 3.12, 3.13 | 6.0 |
+The repository includes a Django reference project in `example/`.
+It currently serves as:
 
-Schema isolation requires PostgreSQL. Database isolation works with any Django-supported backend.
+- the integration environment
+- the test harness
+- the reference wiring for settings, middleware, routing, and admin behavior
+
+The reusable package itself lives in `src/multitenant`.
+
+See [Example Project](docs/example.md).
 
 ---
 
 ## Documentation
 
-- [Provisioning Guide](docs/provisioning.md) - Comprehensive guide to tenant provisioning
-- [API Documentation](docs/api.md) - REST API reference
-- [Architecture](docs/architecture.md) - Framework architecture and design
-- [Model Configuration](docs/MODEL_CONFIG_IMPLEMENTATION.md) - Using `@shared_model` and `@tenant_model`
-- [Auth and Admin](docs/auth-and-admin.md) - Authentication and admin integration
-- [ADRs](docs/adr/) - Architecture Decision Records
+Public documentation:
+
+- [Installation](docs/installation.md)
+- [Quickstart](docs/quickstart.md)
+- [Concepts](docs/concepts.md)
+- [Commands](docs/commands.md)
+- [Provisioning](docs/provisioning.md)
+- [Testing](docs/testing.md)
+- [Example Project](docs/example.md)
+- [API Reference](docs/api.md)
+
+Technical and architectural material:
+
+- [Architecture](docs/architecture.md)
+- [Model Configuration Implementation](docs/MODEL_CONFIG_IMPLEMENTATION.md)
+- [Auth and Admin](docs/auth-and-admin.md)
+- [ADRs](docs/adr/)
 
 ---
 
-## Design Principles
+## Compatibility
 
-- **No domain resolution** as primary strategy
-- Tenant resolution via **header**, **JWT claim**, or **session**
-- Single `/admin/` tenant-aware, with global and tenant modes
-- **Superuser global** + **local users per tenant**
-- Tenant isolation mode (`schema` or `database`) is **fixed at creation**
-- Core decoupled from REST adapter
+| Project status | Python | Django |
+|---|---|---|
+| Current main branch | 3.12, 3.13 | 6.0 |
+
+- Schema isolation requires PostgreSQL
+- Database isolation depends on backend-specific provisioning and runtime support
+
+---
+
+## Status
+
+This project is under active development.
+
+Current transition goals include:
+
+- refining the public documentation structure
+- stabilizing the new package-first repository layout
+- keeping the `example/` project as the reference integration environment
+- reviewing the final public package and repository naming before release
 
 ---
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md). All changes go through Pull Requests.
-
-**Quick guidelines:**
-- Fork the repository
-- Create a branch: `feat/your-feature` or `fix/your-bugfix`
-- Make focused changes with tests
-- Open a Pull Request against `main`
+See [CONTRIBUTING.md](CONTRIBUTING.md).
+All changes should go through Pull Requests.
 
 ---
 
 ## License
 
-MIT License - see [LICENSE](LICENSE) for details.
-
----
-
-## Tooling
-
-- Project management: **UV**
-- Testing: **pytest**
-- Linting/formatting: **ruff**
-- Type checking: **pyright**
-
----
-
-**Built with ❤️ for the Django community**
+MIT License. See [LICENSE](LICENSE).
