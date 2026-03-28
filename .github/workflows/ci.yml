@@ -77,4 +77,4 @@ jobs:
         env:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/test_db
         run: |
-          uv run python example/manage.py test multitenant
+          uv run python example/manage.py test tenantkit
