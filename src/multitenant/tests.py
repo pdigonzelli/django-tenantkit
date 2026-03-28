@@ -1,9 +1,7 @@
 import json
-import subprocess
 
 from django.contrib.auth import get_user_model
 from django.contrib.sessions.backends.db import SessionStore
-from django.core.exceptions import ValidationError
 from django.db import IntegrityError, connection, connections, models
 from django.test import (
     Client,

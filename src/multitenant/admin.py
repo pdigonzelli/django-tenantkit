@@ -2,11 +2,9 @@ from __future__ import annotations
 
 from django import forms
 from django.contrib import admin, messages
-from django.contrib.admin import helpers
 from django.http import HttpResponseRedirect
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import path, reverse
-from django.utils.html import format_html
 from django.utils.translation import gettext_lazy as _
 
 from multitenant.admin_base import (

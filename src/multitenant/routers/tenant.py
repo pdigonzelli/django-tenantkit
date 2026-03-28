@@ -16,11 +16,7 @@ import logging
 from typing import Any
 
 from multitenant.core.context import get_current_strategy, get_current_tenant
-from multitenant.model_config import (
-    MODEL_TYPE_SHARED,
-    MODEL_TYPE_TENANT,
-    ModelRegistry,
-)
+from multitenant.model_config import ModelRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -81,7 +77,9 @@ class TenantRouter:
             # No tenant context - check if model allows global queries
             config = ModelRegistry.get_model_config(model)
             if config and config.get("allow_global_queries"):
-                logger.debug(f"Routing read for tenant model {model.__name__} to default (global query)")
+                logger.debug(
+                    f"Routing read for tenant model {model.__name__} to default (global query)"
+                )
                 return "default"
             # Otherwise, let default routing handle it (will likely fail)
             logger.warning(f"No tenant context for tenant model {model.__name__}")
@@ -172,7 +170,9 @@ class TenantRouter:
         # One shared, one tenant - generally not allowed unless explicitly configured
         if (is_shared_1 and is_tenant_2) or (is_tenant_1 and is_shared_2):
             # Could add configuration option to allow cross-tenant relations
-            logger.warning(f"Cross-tenant relation attempted: {model1.__name__} <-> {model2.__name__}")
+            logger.warning(
+                f"Cross-tenant relation attempted: {model1.__name__} <-> {model2.__name__}"
+            )
             return False
 
         # Unknown classification - defer to default
@@ -202,6 +202,7 @@ class TenantRouter:
         if model_name:
             try:
                 from django.apps import apps
+
                 model = apps.get_model(app_label, model_name)
             except LookupError:
                 pass

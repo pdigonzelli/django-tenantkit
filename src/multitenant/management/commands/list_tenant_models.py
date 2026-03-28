@@ -14,14 +14,8 @@ from typing import Any
 
 from django.apps import apps
 from django.core.management.base import BaseCommand, CommandParser
-from django.db import models
 
-from multitenant.model_config import (
-    MODEL_TYPE_SHARED,
-    MODEL_TYPE_TENANT,
-    MODEL_TYPE_UNCLASSIFIED,
-    ModelRegistry,
-)
+from multitenant.model_config import ModelRegistry
 
 
 class Command(BaseCommand):
@@ -104,14 +98,16 @@ class Command(BaseCommand):
                 if full_name not in registered_models:
                     if app_label and model._meta.app_label != app_label:
                         continue
-                    data["unclassified"].append({
-                        "full_name": full_name,
-                        "app_label": model._meta.app_label,
-                        "model_name": model._meta.model_name,
-                        "table_name": model._meta.db_table,
-                        "auto_migrate": None,
-                        "allow_global_queries": None,
-                    })
+                    data["unclassified"].append(
+                        {
+                            "full_name": full_name,
+                            "app_label": model._meta.app_label,
+                            "model_name": model._meta.model_name,
+                            "table_name": model._meta.db_table,
+                            "auto_migrate": None,
+                            "allow_global_queries": None,
+                        }
+                    )
 
         return data
 
@@ -148,7 +144,9 @@ class Command(BaseCommand):
         self.stdout.write(f"  Tenant models:      {total_tenant}")
         if total_unclassified > 0:
             self.stdout.write(f"  Unclassified:       {total_unclassified}")
-        self.stdout.write(f"  Total:              {total_shared + total_tenant + total_unclassified}")
+        self.stdout.write(
+            f"  Total:              {total_shared + total_tenant + total_unclassified}"
+        )
         self.stdout.write()
 
         # Shared models
@@ -172,14 +170,20 @@ class Command(BaseCommand):
         # Unclassified models
         if data["unclassified"]:
             self.stdout.write(self.style.NOTICE("─" * 80))
-            self.stdout.write(self.style.NOTICE(f"❓ UNCLASSIFIED MODELS ({total_unclassified})"))
+            self.stdout.write(
+                self.style.NOTICE(f"❓ UNCLASSIFIED MODELS ({total_unclassified})")
+            )
             self.stdout.write(self.style.NOTICE("─" * 80))
-            self.stdout.write(self.style.NOTICE(
-                "These models are not registered as shared or tenant."
-            ))
-            self.stdout.write(self.style.NOTICE(
-                "Use @shared_model or @tenant_model decorator, or inherit from SharedModel/TenantModel."
-            ))
+            self.stdout.write(
+                self.style.NOTICE(
+                    "These models are not registered as shared or tenant."
+                )
+            )
+            self.stdout.write(
+                self.style.NOTICE(
+                    "Use @shared_model or @tenant_model decorator, or inherit from SharedModel/TenantModel."
+                )
+            )
             self.stdout.write()
             for model in data["unclassified"]:
                 self._print_model_line(model, "unclassified")
@@ -214,13 +218,10 @@ class Command(BaseCommand):
         # Color based on type
         if model_type == "shared":
             prefix = "  📄"
-            style = self.style.SUCCESS
         elif model_type == "tenant":
             prefix = "  🏢"
-            style = self.style.WARNING
         else:
             prefix = "  ❓"
-            style = self.style.NOTICE
 
         self.stdout.write(f"{prefix} {full_name}")
         self.stdout.write(f"     Table: {table_name}{flags_str}")

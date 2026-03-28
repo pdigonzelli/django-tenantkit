@@ -27,15 +27,15 @@ import os
 from typing import Any
 
 from django.apps import apps
-from django.conf import settings
-from django.core.management.base import CommandError, CommandParser
-from django.core.management.commands.makemigrations import Command as MakemigrationsCommand
+from django.core.management.base import CommandParser
+from django.core.management.commands.makemigrations import (
+    Command as MakemigrationsCommand,
+)
 from django.db import models
 
 from multitenant.model_config import (
     MODEL_TYPE_SHARED,
     MODEL_TYPE_TENANT,
-    ModelRegistry,
     get_models_for_migration,
 )
 
@@ -110,14 +110,13 @@ class Command(MakemigrationsCommand):
         # Filter by app labels if specified
         if app_labels:
             shared_models = [
-                m for m in shared_models
-                if m._meta.app_label in app_labels
+                m for m in shared_models if m._meta.app_label in app_labels
             ]
 
         if not shared_models:
-            self.stdout.write(self.style.WARNING(
-                "No shared models found for the specified apps."
-            ))
+            self.stdout.write(
+                self.style.WARNING("No shared models found for the specified apps.")
+            )
             self.stdout.write()
             return
 
@@ -158,14 +157,13 @@ class Command(MakemigrationsCommand):
         # Filter by app labels if specified
         if app_labels:
             tenant_models = [
-                m for m in tenant_models
-                if m._meta.app_label in app_labels
+                m for m in tenant_models if m._meta.app_label in app_labels
             ]
 
         if not tenant_models:
-            self.stdout.write(self.style.WARNING(
-                "No tenant models found for the specified apps."
-            ))
+            self.stdout.write(
+                self.style.WARNING("No tenant models found for the specified apps.")
+            )
             self.stdout.write()
             return
 
@@ -176,9 +174,11 @@ class Command(MakemigrationsCommand):
         self.stdout.write()
 
         if self.tenant_name:
-            self.stdout.write(self.style.NOTICE(
-                f"Note: Migrations will be applied to tenant '{self.tenant_name}' during migrate."
-            ))
+            self.stdout.write(
+                self.style.NOTICE(
+                    f"Note: Migrations will be applied to tenant '{self.tenant_name}' during migrate."
+                )
+            )
             self.stdout.write()
 
         if self.dry_run_tenant:
@@ -221,24 +221,30 @@ class Command(MakemigrationsCommand):
                 migrations_module = self._get_or_create_migrations_module(app_config)
 
             if migrations_module is None:
-                self.stdout.write(self.style.ERROR(
-                    f"  Could not find or create migrations for {app_label}"
-                ))
+                self.stdout.write(
+                    self.style.ERROR(
+                        f"  Could not find or create migrations for {app_label}"
+                    )
+                )
                 continue
 
             # For now, we use the standard Django makemigrations logic
             # but we could extend this to create separate migration files
             # for shared vs tenant models
 
-            self.stdout.write(self.style.SUCCESS(
-                f"  ✓ {len(app_models)} model(s) ready for migration"
-            ))
+            self.stdout.write(
+                self.style.SUCCESS(
+                    f"  ✓ {len(app_models)} model(s) ready for migration"
+                )
+            )
 
         self.stdout.write()
-        self.stdout.write(self.style.NOTICE(
-            f"Run 'python manage.py tenant_migrate --type={migration_type}' "
-            f"to apply these migrations."
-        ))
+        self.stdout.write(
+            self.style.NOTICE(
+                f"Run 'python manage.py tenant_migrate --type={migration_type}' "
+                f"to apply these migrations."
+            )
+        )
         self.stdout.write()
 
     def _get_or_create_migrations_module(self, app_config: Any) -> Any:
@@ -263,7 +269,9 @@ class Command(MakemigrationsCommand):
             except ImportError:
                 return None
 
-    def write_migration_files(self, changes: dict[str, Any], update_previous_migration_paths: Any = None) -> None:  # type: ignore[override]
+    def write_migration_files(
+        self, changes: dict[str, Any], update_previous_migration_paths: Any = None
+    ) -> None:  # type: ignore[override]
         """Override to add custom headers to migration files."""
         # Add type annotation to migrations
         for app_label, app_changes in changes.items():

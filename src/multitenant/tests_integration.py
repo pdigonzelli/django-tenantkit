@@ -400,7 +400,6 @@ class DatabaseProvisioningCleanupTests(TestCase):
     def test_delete_database_and_user(self):
         """Test that delete_database_and_user drops database and user."""
         from multitenant.provisioning import delete_database_and_user
-        from multitenant.crypto import encrypt_text
 
         # Create a database and user first
         db_name = f"test_delete_{uuid.uuid4().hex[:8]}"

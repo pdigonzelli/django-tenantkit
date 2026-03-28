@@ -1,1 +1,1 @@
-from .tenant import TenantMiddleware
+from .tenant import TenantMiddleware as TenantMiddleware

@@ -32,14 +32,10 @@ from typing import Any
 
 from django.core.management.base import CommandError, CommandParser
 from django.core.management.commands.migrate import Command as MigrateCommand
-from django.db import DEFAULT_DB_ALIAS, connections, transaction
+from django.db import DEFAULT_DB_ALIAS, connections
 
 from multitenant.core.context import get_current_tenant
-from multitenant.model_config import (
-    MODEL_TYPE_SHARED,
-    MODEL_TYPE_TENANT,
-    ModelRegistry,
-)
+from multitenant.model_config import ModelRegistry
 from multitenant.models import Tenant
 
 
@@ -148,9 +144,9 @@ class Command(MigrateCommand):
             if args:
                 filtered_args = [a for a in args if a in shared_apps]
                 if not filtered_args:
-                    self.stdout.write(self.style.WARNING(
-                        "No requested apps have shared models."
-                    ))
+                    self.stdout.write(
+                        self.style.WARNING("No requested apps have shared models.")
+                    )
                     return
                 args = tuple(filtered_args)
 
@@ -230,7 +226,9 @@ class Command(MigrateCommand):
                 raise CommandError(f"Unknown isolation mode: {tenant.isolation_mode}")
 
             self.tenant_success.append(tenant.slug)
-            self.stdout.write(self.style.SUCCESS(f"✓ {tenant.slug} migrated successfully"))
+            self.stdout.write(
+                self.style.SUCCESS(f"✓ {tenant.slug} migrated successfully")
+            )
 
         except Exception as e:
             self.tenant_failed.append((tenant.slug, str(e)))
@@ -258,12 +256,12 @@ class Command(MigrateCommand):
                 # Check if schema exists
                 cursor.execute(
                     "SELECT schema_name FROM information_schema.schemata WHERE schema_name = %s",
-                    [schema_name]
+                    [schema_name],
                 )
                 if not cursor.fetchone():
                     self.stdout.write(f"  Creating schema '{schema_name}'...")
                     cursor.execute(f'CREATE SCHEMA IF NOT EXISTS "{schema_name}"')
-                    self.stdout.write(self.style.SUCCESS(f"  ✓ Schema created"))
+                    self.stdout.write(self.style.SUCCESS("  ✓ Schema created"))
 
         # Set search path for this tenant
         with connection.cursor() as cursor:
@@ -344,6 +342,7 @@ class Command(MigrateCommand):
 
         # Store current tenant in context for potential use in migrations
         from multitenant.middleware import tenant_state
+
         previous_tenant = get_current_tenant()
         tenant_state.set(tenant)
 
@@ -367,7 +366,7 @@ class Command(MigrateCommand):
             self.stdout.write(f"Shared migrations: {status}")
 
         if self.migration_type in ("tenant", "all") and not self.skip_tenant:
-            self.stdout.write(f"Tenant migrations:")
+            self.stdout.write("Tenant migrations:")
             self.stdout.write(f"  Successful: {len(self.tenant_success)}")
             if self.tenant_success:
                 for slug in self.tenant_success:

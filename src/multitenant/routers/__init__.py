@@ -1,1 +1,1 @@
-from .tenant import TenantRouter
+from .tenant import TenantRouter as TenantRouter

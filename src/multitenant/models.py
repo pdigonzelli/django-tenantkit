@@ -12,7 +12,7 @@ from django.utils.text import slugify
 from .connections import build_connection_alias, build_connection_url, build_schema_name
 from .crypto import decrypt_text, encrypt_text
 from .managers import AllObjectsManager, AuditManager, TenantSharedManager
-from .model_config import shared_model, tenant_model
+from .model_config import shared_model
 
 logger = logging.getLogger(__name__)
 
