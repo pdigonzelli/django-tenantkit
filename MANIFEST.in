@@ -1,2 +1,2 @@
-recursive-include src/multitenant/templates *.html
-recursive-include src/multitenant/static *.js
+recursive-include src/tenantkit/templates *.html
+recursive-include src/tenantkit/static *.js

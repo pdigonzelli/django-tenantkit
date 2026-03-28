@@ -1,5 +1,5 @@
 def main():
-    print("Hello from django-multitenant-mix!")
+    print("Hello from django-tenantkit example!")
 
 
 if __name__ == "__main__":

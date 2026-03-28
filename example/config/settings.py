@@ -35,7 +35,7 @@ ALLOWED_HOSTS = []
 # Application definition
 
 INSTALLED_APPS = [
-    "multitenant",
+    "tenantkit",
     "rest_framework",
     "drf_spectacular",  # OpenAPI 3.0 schema generation
     "django.contrib.admin",
@@ -47,7 +47,7 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
-    "multitenant.middleware.TenantMiddleware",
+    "tenantkit.middleware.TenantMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
@@ -90,7 +90,7 @@ DATABASES = {
 }
 
 DATABASE_ROUTERS = [
-    "multitenant.routers.TenantRouter",
+    "tenantkit.routers.TenantRouter",
 ]
 
 # Password validation

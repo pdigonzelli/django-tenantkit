@@ -12,7 +12,7 @@ license = "MIT"
 authors = [
     {name = "Pablo Digonzelli", email = "pdigonzelli@gmail.com"}
 ]
-keywords = ["django", "multitenant", "multi-tenant", "saas", "postgresql", "schema"]
+keywords = ["django", "tenantkit", "multi-tenant", "saas", "postgresql", "schema"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Framework :: Django",
@@ -56,10 +56,10 @@ include-package-data = true
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["multitenant", "multitenant.*"]
+include = ["tenantkit", "tenantkit.*"]
 
 [tool.setuptools.package-data]
-multitenant = [
+tenantkit = [
     "templates/**/*.html",
     "static/**/*.js",
 ]
@@ -67,4 +67,4 @@ multitenant = [
 [tool.pytest.ini_options]
 DJANGO_SETTINGS_MODULE = "config.settings"
 python_files = ["tests.py", "test_*.py", "*_tests.py", "tests_*.py", "tests_integration.py", "tests_admin_base.py"]
-testpaths = ["src/multitenant"]
+testpaths = ["src/tenantkit"]

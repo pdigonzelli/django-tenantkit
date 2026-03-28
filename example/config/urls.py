@@ -22,8 +22,8 @@ from drf_spectacular.views import (
     SpectacularSwaggerView,
 )
 
-from multitenant.admin_site import multitenant_admin_site
-from multitenant.views import tenant_detail, tenant_operation, tenants_collection
+from tenantkit.admin_site import tenantkit_admin_site
+from tenantkit.views import tenant_detail, tenant_operation, tenants_collection
 
 urlpatterns = [
     # API endpoints
@@ -43,5 +43,5 @@ urlpatterns = [
         name="redoc",
     ),
     # Admin interface
-    path("admin/", multitenant_admin_site.urls),
+    path("admin/", tenantkit_admin_site.urls),
 ]
