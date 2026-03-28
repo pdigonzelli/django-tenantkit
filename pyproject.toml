@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "A comprehensive Django multi-tenancy solution with schema isolation, tenant-aware middleware, and flexible routing"
 readme = "README.md"
 requires-python = ">=3.12"
-license = {text = "MIT"}
+license = "MIT"
 authors = [
     {name = "Pablo Digonzelli", email = "pdigonzelli@gmail.com"}
 ]
@@ -18,7 +18,6 @@ classifiers = [
     "Framework :: Django",
     "Framework :: Django :: 6.0",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.12",
@@ -53,10 +52,17 @@ Changelog = "https://github.com/pdigonzelli/django-multitenant/blob/main/CHANGEL
 
 [tool.setuptools]
 package-dir = {"" = "src"}
+include-package-data = true
 
 [tool.setuptools.packages.find]
 where = ["src"]
 include = ["multitenant", "multitenant.*"]
+
+[tool.setuptools.package-data]
+multitenant = [
+    "templates/**/*.html",
+    "static/**/*.js",
+]
 
 [tool.pytest.ini_options]
 DJANGO_SETTINGS_MODULE = "config.settings"
