@@ -44,11 +44,11 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/pdigonzelli/django-multitenant"
-Documentation = "https://github.com/pdigonzelli/django-multitenant#readme"
-Repository = "https://github.com/pdigonzelli/django-multitenant"
-Issues = "https://github.com/pdigonzelli/django-multitenant/issues"
-Changelog = "https://github.com/pdigonzelli/django-multitenant/blob/main/CHANGELOG.md"
+Homepage = "https://github.com/pdigonzelli/django-tenantkit"
+Documentation = "https://github.com/pdigonzelli/django-tenantkit#readme"
+Repository = "https://github.com/pdigonzelli/django-tenantkit"
+Issues = "https://github.com/pdigonzelli/django-tenantkit/issues"
+Changelog = "https://github.com/pdigonzelli/django-tenantkit/blob/main/CHANGELOG.md"
 
 [tool.setuptools]
 package-dir = {"" = "src"}

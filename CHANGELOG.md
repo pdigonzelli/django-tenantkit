@@ -21,5 +21,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Initial release
 
-[Unreleased]: https://github.com/pdigonzelli/django-multitenant/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/pdigonzelli/django-multitenant/releases/tag/v0.1.0
+[Unreleased]: https://github.com/pdigonzelli/django-tenantkit/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/pdigonzelli/django-tenantkit/releases/tag/v0.1.0
