@@ -25,13 +25,11 @@ jobs:
 
       - name: Install dependencies
         run: |
-          cd example
           uv sync --dev
 
       - name: Run Ruff
         run: |
-          cd example
-          uv run ruff check .
+          uv run ruff check src example
 
   test:
     name: Tests (Python ${{ matrix.python-version }})
@@ -73,19 +71,10 @@ jobs:
 
       - name: Install dependencies
         run: |
-          cd example
           uv sync --dev
 
       - name: Run tests
         env:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/test_db
         run: |
-          cd example
-          uv run pytest -v --tb=short --cov=. --cov-report=html --cov-report=term
-
-      - name: Upload coverage
-        if: matrix.python-version == '3.12'
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage-report
-          path: example/htmlcov/
+          uv run python example/manage.py test multitenant
