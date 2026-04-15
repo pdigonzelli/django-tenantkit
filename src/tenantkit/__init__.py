@@ -62,7 +62,6 @@ def _lazy_import(name: str):
         "get_current_strategy": (".core.context", "get_current_strategy"),
         # Middleware
         "TenantMiddleware": (".middleware", "TenantMiddleware"),
-        "tenant_state": (".middleware", "tenant_state"),
         # Models
         "AuditModel": (".models", "AuditModel"),
         "Tenant": (".models", "Tenant"),
@@ -102,7 +101,6 @@ __all__ = [
     "set_current_tenant",
     "get_current_strategy",
     "TenantMiddleware",
-    "tenant_state",
     "AuditModel",
     "Tenant",
     "TenantMembership",

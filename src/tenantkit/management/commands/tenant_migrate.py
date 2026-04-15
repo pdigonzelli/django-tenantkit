@@ -34,7 +34,7 @@ from django.core.management.base import CommandError, CommandParser
 from django.core.management.commands.migrate import Command as MigrateCommand
 from django.db import DEFAULT_DB_ALIAS, connections
 
-from tenantkit.core.context import get_current_tenant
+from tenantkit.core.context import get_current_tenant, set_current_tenant
 from tenantkit.model_config import ModelRegistry
 from tenantkit.models import Tenant
 
@@ -341,17 +341,15 @@ class Command(MigrateCommand):
                 args = tuple(filtered_args)
 
         # Store current tenant in context for potential use in migrations
-        from tenantkit.middleware import tenant_state
-
         previous_tenant = get_current_tenant()
-        tenant_state.set(tenant)
+        set_current_tenant(tenant)
 
         try:
             # Run the migrations
             super().handle(*args, **migrate_options)
         finally:
             # Restore previous tenant context
-            tenant_state.set(previous_tenant)
+            set_current_tenant(previous_tenant)
 
     def _print_summary(self) -> None:
         """Print migration summary."""
