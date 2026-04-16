@@ -30,8 +30,10 @@ Quick Start:
            # ...
        ]
 
-       DATABASE_ROUTERS = ["tenantkit.routers.tenant.TenantRouter"]
+        DATABASE_ROUTERS = ["tenantkit.routers.tenant.TenantRouter"]
 """
+
+from typing import TYPE_CHECKING
 
 __version__ = "0.1.0"
 
@@ -46,6 +48,27 @@ from .model_config import (
     shared_model,
     tenant_model,
 )
+
+if TYPE_CHECKING:
+    from .auth import (
+        TenantClaimsMixin,
+        TenantJWTAuthentication,
+        TenantTokenValidator,
+    )
+    from .core.context import (
+        get_current_strategy,
+        get_current_tenant,
+        set_current_tenant,
+    )
+    from .middleware import TenantMiddleware
+    from .models import (
+        AuditModel,
+        Tenant,
+        TenantInvitation,
+        TenantSetting,
+        TenantSharedModel,
+        TimestampModel,
+    )
 
 # Lazy imports for components that need Django to be ready
 # These are imported on demand to avoid AppRegistryNotReady
