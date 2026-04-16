@@ -52,6 +52,18 @@ class TenantRouter:
         """Check if a model is registered as tenant."""
         return ModelRegistry.is_tenant_model(model)
 
+    def _get_dual_app_labels(self) -> set[str]:
+        """Return the set of app labels configured as dual (shared + tenant)."""
+        from django.conf import settings
+
+        dual_apps: list[str] = getattr(settings, "TENANTKIT_DUAL_APPS", [])
+        # Convert dotted app names to app_labels
+        labels: set[str] = set()
+        for app in dual_apps:
+            # "django.contrib.auth" → "auth", "django.contrib.contenttypes" → "contenttypes"
+            labels.add(app.rsplit(".", 1)[-1])
+        return labels
+
     def db_for_read(self, model: Any, **hints: Any) -> str | None:
         """
         Determine which database to use for read operations.
@@ -188,6 +200,12 @@ class TenantRouter:
         """
         Determine if migrations are allowed on a database.
 
+        Routing logic:
+        1. Dual apps (TENANTKIT_DUAL_APPS) → migrate on ALL databases (shared + tenant)
+        2. Shared models (@shared_model) → migrate only on 'default'
+        3. Tenant models (@tenant_model) → migrate only on tenant databases (not 'default')
+        4. Unclassified models → migrate only on 'default'
+
         Args:
             db: Database alias
             app_label: Application label
@@ -197,7 +215,12 @@ class TenantRouter:
         Returns:
             True if migration is allowed, False if not, None to defer
         """
-        # Get the model if possible
+        # 1. Check dual apps first — they migrate everywhere
+        dual_labels = self._get_dual_app_labels()
+        if app_label in dual_labels:
+            return True
+
+        # 2. Try to resolve the model for registry-based routing
         model = None
         if model_name:
             try:
@@ -218,15 +241,10 @@ class TenantRouter:
 
             if is_tenant:
                 # Tenant models don't migrate on default (they migrate on tenant DBs)
-                # Exception: if we're creating the initial schema
                 if db == "default":
                     return False
-                # Allow on tenant databases - strategy will validate
+                # Allow on tenant databases
                 return None
 
-        # Unclassified model - defer to strategy or default
-        strategy = self._get_strategy()
-        if strategy:
-            return strategy.allow_migrate(db, app_label, model_name=model_name, **hints)
-
-        return None
+        # 3. Unclassified models → default only
+        return db == "default"

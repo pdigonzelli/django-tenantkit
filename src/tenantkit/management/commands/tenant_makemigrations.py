@@ -23,6 +23,7 @@ Usage:
 
 from __future__ import annotations
 
+# pyright: reportAttributeAccessIssue=false
 import os
 from typing import Any
 
@@ -80,13 +81,13 @@ class Command(MakemigrationsCommand):
         parent_options.pop("dry_run_tenant", None)
 
         # Get apps to process
-        app_labels = set(app_labels)
+        app_label_set = set(app_labels)
 
         if self.model_type in ("shared", "all"):
-            self._handle_shared_migrations(app_labels, parent_options)
+            self._handle_shared_migrations(app_label_set, parent_options)
 
         if self.model_type in ("tenant", "all"):
-            self._handle_tenant_migrations(app_labels, parent_options)
+            self._handle_tenant_migrations(app_label_set, parent_options)
 
     def _handle_shared_migrations(
         self,
@@ -274,7 +275,7 @@ class Command(MakemigrationsCommand):
     ) -> None:  # type: ignore[override]
         """Override to add custom headers to migration files."""
         # Add type annotation to migrations
-        for app_label, app_changes in changes.items():
+        for _app_label, app_changes in changes.items():
             for migration in app_changes:
                 # Add a comment indicating this is a tenantkit migration
                 if migration.dependencies:

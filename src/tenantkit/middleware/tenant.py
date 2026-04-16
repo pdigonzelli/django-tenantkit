@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 from django.http import HttpRequest, HttpResponse
 from django.utils.deprecation import MiddlewareMixin
@@ -40,8 +40,9 @@ class TenantMiddleware(MiddlewareMixin):
                 set_current_strategy(strategy)
                 strategy.activate(tenant)
 
-            setattr(request, "tenant", tenant)
-            setattr(request, "tenant_strategy", strategy)
+            cast_request = cast(Any, request)
+            cast_request.tenant = tenant
+            cast_request.tenant_strategy = strategy
 
             return self.get_response(request)
         finally:

@@ -1,12 +1,10 @@
 from __future__ import annotations
 
 from pathlib import Path
+from secrets import token_urlsafe
 from urllib.parse import parse_qsl, quote, unquote, urlparse, urlunparse
 
-from secrets import token_urlsafe
-
 from django.conf import settings
-
 
 DEFAULT_DB_HOST = "localhost"
 DEFAULT_DB_PORT = 5432
@@ -71,10 +69,7 @@ def build_connection_url(
 def parse_connection_url(url: str) -> dict[str, object]:
     if "://" not in url:
         path = Path(url)
-        if not path.is_absolute():
-            name = url
-        else:
-            name = str(path)
+        name = url if not path.is_absolute() else str(path)
         return {
             "ENGINE": "django.db.backends.sqlite3",
             "NAME": name,

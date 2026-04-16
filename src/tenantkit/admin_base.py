@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 from django.contrib import admin, messages
+from django.contrib.admin.helpers import ACTION_CHECKBOX_NAME
 from django.db.models import Q
 from django.http import HttpResponseRedirect
 from django.shortcuts import render
@@ -40,7 +41,7 @@ class SoftDeleteStatusFilter(admin.SimpleListFilter):
         return queryset
 
     def choices(self, changelist):
-        for lookup, title in self.lookup_choices:
+        for lookup, title in cast(list[tuple[str, str]], list(self.lookup_choices)):
             yield {
                 "selected": self.value() == str(lookup),
                 "query_string": changelist.get_query_string(
@@ -214,14 +215,15 @@ class SoftDeleteAdminMixin:
 
     def get_queryset(self, request):
         """Override to use all_objects manager for soft-delete support."""
+        admin_self = cast(Any, self)
         # Use all_objects to include soft-deleted records
-        if hasattr(self.model, "all_objects"):
-            qs = self.model.all_objects.get_queryset()
+        if hasattr(admin_self.model, "all_objects"):
+            qs = admin_self.model.all_objects.get_queryset()
         else:
-            qs = super().get_queryset(request)
+            qs = cast(Any, super()).get_queryset(request)
 
         # Apply ordering
-        ordering = self.get_ordering(request)
+        ordering = admin_self.get_ordering(request)
         if ordering:
             qs = qs.order_by(*ordering)
 
@@ -229,7 +231,7 @@ class SoftDeleteAdminMixin:
 
     def get_list_display(self, request):
         """Add status indicator to list display."""
-        list_display = list(super().get_list_display(request))
+        list_display = list(cast(Any, super()).get_list_display(request))
         if "deleted_status" not in list_display:
             list_display.insert(0, "deleted_status")
         return tuple(list_display)
@@ -244,33 +246,38 @@ class SoftDeleteAdminMixin:
     @admin.action(description=_("Restore selected records"))
     def restore_selected(self, request, queryset):
         """Restore soft-deleted records."""
+        admin_self = cast(Any, self)
         restored_count = 0
         for obj in queryset.filter(deleted_at__isnull=False):
-            obj.restore(user=request.user)
+            if hasattr(obj, "deleted_by"):
+                obj.restore(user=request.user)
+            else:
+                obj.restore()
             restored_count += 1
 
         if restored_count:
-            self.message_user(
+            admin_self.message_user(
                 request,
                 _("%(count)d record(s) restored successfully.")
                 % {"count": restored_count},
                 messages.SUCCESS,
             )
         else:
-            self.message_user(
+            admin_self.message_user(
                 request, _("No deleted records selected."), messages.WARNING
             )
 
     @admin.action(description=_("Permanently delete selected records"))
     def hard_delete_selected(self, request, queryset):
         """Permanently delete records (bypass soft delete)."""
+        admin_self = cast(Any, self)
         # This requires a confirmation step
         if request.method == "POST" and "confirm_hard_delete" in request.POST:
             confirm_text = request.POST.get("confirm_hard_delete", "").strip()
             expected_text = _("HARD DELETE")
 
             if confirm_text != expected_text:
-                self.message_user(
+                admin_self.message_user(
                     request,
                     _("Confirmation text did not match. Deletion cancelled."),
                     messages.ERROR,
@@ -279,7 +286,7 @@ class SoftDeleteAdminMixin:
 
             deleted_count = queryset.count()
             queryset.delete()  # This is the real delete
-            self.message_user(
+            admin_self.message_user(
                 request,
                 _("%(count)d record(s) permanently deleted.")
                 % {"count": deleted_count},
@@ -287,19 +294,18 @@ class SoftDeleteAdminMixin:
             )
             return HttpResponseRedirect(
                 reverse(
-                    "admin:%s_%s_changelist"
-                    % (self.opts.app_label, self.opts.model_name)
+                    f"admin:{admin_self.opts.app_label}_{admin_self.opts.model_name}_changelist"
                 )
             )
 
         # Show confirmation page
         context = {
-            **self.admin_site.each_context(request),
+            **admin_self.admin_site.each_context(request),
             "title": _("Confirm Permanent Deletion"),
             "queryset": queryset,
             "count": queryset.count(),
-            "opts": self.opts,
-            "action_checkbox_name": admin.helpers.ACTION_CHECKBOX_NAME,
+            "opts": admin_self.opts,
+            "action_checkbox_name": ACTION_CHECKBOX_NAME,
             "expected_confirmation": _("HARD DELETE"),
         }
         return render(
@@ -313,10 +319,16 @@ class SoftDeleteAdminMixin:
             # Permanent deletion
             obj.delete()
         else:
-            # Soft delete
-            obj.soft_delete(user=request.user)
+            # Soft delete — pass user only if model supports user tracking
+            if hasattr(obj, "deleted_by"):
+                obj.soft_delete(user=request.user)
+            else:
+                obj.soft_delete()
 
     def delete_queryset(self, request, queryset):
         """Override bulk delete to use soft delete."""
         for obj in queryset:
-            obj.soft_delete(user=request.user)
+            if hasattr(obj, "deleted_by"):
+                obj.soft_delete(user=request.user)
+            else:
+                obj.soft_delete()

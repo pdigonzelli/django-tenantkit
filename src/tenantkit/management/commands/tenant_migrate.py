@@ -28,6 +28,7 @@ Usage:
 
 from __future__ import annotations
 
+# pyright: reportAttributeAccessIssue=false, reportArgumentType=false
 from typing import Any
 
 from django.core.management.base import CommandError, CommandParser
@@ -83,7 +84,7 @@ class Command(MigrateCommand):
         self.skip_shared = options.get("skip_shared")
         self.skip_tenant = options.get("skip_tenant")
         self.fake_tenant = options.get("fake_tenant")
-        self.create_schemas = options.get("create_schemas")
+        self.create_schemas = bool(options.get("create_schemas"))
 
         # Validate options
         if self.tenant_slug and self.migration_type == "shared":
@@ -200,8 +201,8 @@ class Command(MigrateCommand):
             try:
                 tenant = queryset.get(slug=self.tenant_slug)
                 return [tenant]
-            except Tenant.DoesNotExist:
-                raise CommandError(f"Tenant '{self.tenant_slug}' not found.")
+            except Tenant.DoesNotExist as err:
+                raise CommandError(f"Tenant '{self.tenant_slug}' not found.") from err
 
         return list(queryset)
 
@@ -289,7 +290,7 @@ class Command(MigrateCommand):
         tenant_apps: set[str],
     ) -> None:
         """Migrate a database-based tenant."""
-        connection_alias = tenant.connection_alias
+        connection_alias = str(tenant.connection_alias or "")
         if not connection_alias:
             raise CommandError(f"Tenant {tenant.slug} has no connection_alias defined.")
 

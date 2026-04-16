@@ -1,8 +1,12 @@
 import json
+from typing import Any, cast
+from unittest.mock import MagicMock, patch
 
 from django.contrib.auth import get_user_model
+from django.contrib.auth.models import AnonymousUser
 from django.contrib.sessions.backends.db import SessionStore
-from django.db import IntegrityError, connection, connections, models
+from django.core.exceptions import ImproperlyConfigured, ValidationError
+from django.db import connection, connections, models
 from django.test import (
     Client,
     RequestFactory,
@@ -10,9 +14,10 @@ from django.test import (
     TransactionTestCase,
     override_settings,
 )
-from unittest.mock import MagicMock, patch
-from typing import Any, cast
+from rest_framework.exceptions import AuthenticationFailed
 
+from tenantkit.admin import TenantAdmin, TenantAdminForm
+from tenantkit.admin_base import TenantSharedModelAdmin
 from tenantkit.admin_site import (
     AUTH_SCOPE_GLOBAL,
     AUTH_SCOPE_TENANT,
@@ -20,9 +25,16 @@ from tenantkit.admin_site import (
     SESSION_AUTH_SCOPE,
     tenantkit_admin_site,
 )
-from tenantkit.admin import TenantAdmin, TenantAdminForm
+from tenantkit.auth import (
+    TenantClaimsMixin,
+    TenantJWTAuthentication,
+    TenantTokenValidator,
+)
+from tenantkit.bootstrap import (
+    register_database_tenant_connection,
+    unregister_database_tenant_connection,
+)
 from tenantkit.connections import parse_connection_url
-from tenantkit.admin_base import TenantSharedModelAdmin
 from tenantkit.core.context import (
     clear_current_strategy,
     clear_current_tenant,
@@ -31,14 +43,15 @@ from tenantkit.core.context import (
     set_current_strategy,
     set_current_tenant,
 )
-from tenantkit.bootstrap import (
-    register_database_tenant_connection,
-    unregister_database_tenant_connection,
-)
 from tenantkit.crypto import decrypt_text, encrypt_text
 from tenantkit.middleware.tenant import TenantMiddleware
-from tenantkit.models import Tenant, TenantMembership
-from tenantkit.models import TenantSharedModel
+from tenantkit.model_config import (
+    MODEL_TYPE_TENANT,
+    ModelRegistry,
+    get_models_for_migration,
+    tenant_model,
+)
+from tenantkit.models import Tenant, TenantSharedModel
 from tenantkit.provisioning import (
     ensure_database_exists,
     ensure_database_tenant_ready,
@@ -47,8 +60,31 @@ from tenantkit.routers.tenant import TenantRouter
 from tenantkit.strategies.database.strategy import DatabaseStrategy
 from tenantkit.strategies.schema.strategy import SchemaStrategy
 
-
 User = get_user_model()
+
+
+@tenant_model
+class DummyTenantRecord(models.Model):
+    name = models.CharField(max_length=64)
+
+    class Meta:
+        app_label = "tenantkit"
+        managed = False
+
+    def __str__(self) -> str:
+        return str(self.name)
+
+
+@tenant_model(auto_migrate=False, allow_global_queries=True)
+class DummyGlobalTenantRecord(models.Model):
+    name = models.CharField(max_length=64)
+
+    class Meta:
+        app_label = "tenantkit"
+        managed = False
+
+    def __str__(self) -> str:
+        return str(self.name)
 
 
 class ContextTests(TestCase):
@@ -84,8 +120,6 @@ class TenantModelTests(TestCase):
             slug="acme",
             name="Acme",
             isolation_mode=Tenant.IsolationMode.SCHEMA,
-            created_by=self.user,
-            updated_by=self.user,
         )
 
         self.assertTrue(tenant.schema_name)
@@ -97,8 +131,6 @@ class TenantModelTests(TestCase):
             slug="acme-db",
             name="Acme DB",
             isolation_mode=Tenant.IsolationMode.DATABASE,
-            created_by=self.user,
-            updated_by=self.user,
         )
 
         self.assertTrue(tenant.connection_alias)
@@ -131,7 +163,7 @@ class TenantModelTests(TestCase):
             schema_name="acme_schema",
         )
 
-        with self.assertRaises(Exception):
+        with self.assertRaises(ValidationError):
             tenant.save()
 
     def test_schema_tenant_rejects_explicit_connection_alias(self):
@@ -143,7 +175,7 @@ class TenantModelTests(TestCase):
             connection_alias="tenant_acme",
         )
 
-        with self.assertRaises(Exception):
+        with self.assertRaises(ValidationError):
             tenant.save()
 
     # Note: Auto provisioning restriction for non-SQLite backends is tested
@@ -160,7 +192,7 @@ class TenantModelTests(TestCase):
             provisioning_connection_string="postgresql://admin:secret@localhost:5432/postgres",
         )
 
-        with self.assertRaises(Exception):
+        with self.assertRaises(ValidationError):
             tenant.save()
 
     def test_soft_delete_and_restore(self):
@@ -168,21 +200,18 @@ class TenantModelTests(TestCase):
             slug="acme",
             name="Acme",
             isolation_mode=Tenant.IsolationMode.SCHEMA,
-            created_by=self.user,
-            updated_by=self.user,
         )
 
         self.assertFalse(tenant.deleted)
         self.assertTrue(tenant.is_active)
 
-        tenant.soft_delete(user=self.user)
+        tenant.soft_delete()
         tenant.refresh_from_db()
 
         self.assertTrue(tenant.deleted)
         self.assertFalse(tenant.is_active)
-        self.assertEqual(tenant.deleted_by, self.user)
 
-        tenant.restore(user=self.user)
+        tenant.restore()
         tenant.refresh_from_db()
 
         self.assertFalse(tenant.deleted)
@@ -246,35 +275,6 @@ class CryptoTests(TestCase):
         self.assertEqual(decrypt_text(cipher), plain)
 
 
-class TenantMembershipTests(TestCase):
-    def setUp(self):
-        self.user = User.objects.create_user(username="owner", password="secret")
-        self.member = User.objects.create_user(username="member", password="secret")
-        self.tenant = Tenant.objects.create(
-            slug="acme",
-            name="Acme",
-            isolation_mode=Tenant.IsolationMode.SCHEMA,
-            created_by=self.user,
-            updated_by=self.user,
-        )
-
-    def test_unique_tenant_membership(self):
-        TenantMembership.objects.create(
-            tenant=self.tenant,
-            user=self.member,
-            role=TenantMembership.Role.ADMIN,
-            created_by=self.user,
-            updated_by=self.user,
-        )
-
-        with self.assertRaises(IntegrityError):
-            TenantMembership.objects.create(
-                tenant=self.tenant,
-                user=self.member,
-                role=TenantMembership.Role.MEMBER,
-            )
-
-
 class TenantAdminFormTests(TestCase):
     def setUp(self):
         self.user = User.objects.create_user(username="owner", password="secret")
@@ -284,8 +284,6 @@ class TenantAdminFormTests(TestCase):
             isolation_mode=Tenant.IsolationMode.SCHEMA,
             provisioning_mode=Tenant.ProvisioningMode.MANUAL,
             schema_name="schema_tenant",
-            created_by=self.user,
-            updated_by=self.user,
         )
 
     def test_switching_to_database_manual_validates_connection_fields(self):
@@ -317,15 +315,11 @@ class TenantSharedModelTests(TransactionTestCase):
             slug="tenant-one",
             name="Tenant One",
             isolation_mode=Tenant.IsolationMode.SCHEMA,
-            created_by=self.user,
-            updated_by=self.user,
         )
         self.tenant_two = Tenant.objects.create(
             slug="tenant-two",
             name="Tenant Two",
             isolation_mode=Tenant.IsolationMode.SCHEMA,
-            created_by=self.user,
-            updated_by=self.user,
         )
 
     def test_allowed_tenants_empty_means_shared_for_all(self):
@@ -372,15 +366,11 @@ class TenantSharedModelAdminTests(TransactionTestCase):
             slug="tenant-one",
             name="Tenant One",
             isolation_mode=Tenant.IsolationMode.SCHEMA,
-            created_by=self.user,
-            updated_by=self.user,
         )
         self.tenant_two = Tenant.objects.create(
             slug="tenant-two",
             name="Tenant Two",
             isolation_mode=Tenant.IsolationMode.SCHEMA,
-            created_by=self.user,
-            updated_by=self.user,
         )
 
     def test_tenant_shared_admin_filters_by_allowed_tenants(self):
@@ -452,6 +442,8 @@ class TenantRouterTests(TestCase):
         router = TenantRouter()
         self.assertEqual(router.db_for_read(Tenant), "default")
         self.assertEqual(router.db_for_write(Tenant), "default")
+        self.assertIsNone(router.db_for_read(DummyTenantRecord))
+        self.assertIsNone(router.db_for_write(DummyTenantRecord))
 
     def test_router_delegates_to_strategy(self):
         tenant = Tenant(
@@ -464,13 +456,36 @@ class TenantRouterTests(TestCase):
         set_current_strategy(strategy)
 
         router = TenantRouter()
-        self.assertEqual(router.db_for_read(Tenant), "default")
-        self.assertEqual(router.db_for_write(Tenant), "default")
+        self.assertEqual(router.db_for_read(DummyTenantRecord), "tenant_db")
+        self.assertEqual(router.db_for_write(DummyTenantRecord), "tenant_db")
         self.assertFalse(router.allow_migrate("tenant_db", "tenantkit", "tenant"))
 
-        self.assertEqual(len(strategy.read_calls), 0)
-        self.assertEqual(len(strategy.write_calls), 0)
+        self.assertEqual(len(strategy.read_calls), 1)
+        self.assertEqual(strategy.read_calls[0][0], DummyTenantRecord)
+        self.assertEqual(len(strategy.write_calls), 1)
+        self.assertEqual(strategy.write_calls[0][0], DummyTenantRecord)
         self.assertEqual(len(strategy.migrate_calls), 0)
+
+    def test_router_allows_global_queries_for_configured_tenant_model(self):
+        router = TenantRouter()
+
+        self.assertEqual(router.db_for_read(DummyGlobalTenantRecord), "default")
+
+    def test_registry_tracks_concrete_tenant_model_configuration(self):
+        self.assertTrue(ModelRegistry.is_tenant_model(DummyTenantRecord))
+        self.assertTrue(ModelRegistry.is_tenant_model(DummyGlobalTenantRecord))
+
+        config = ModelRegistry.get_model_config(DummyGlobalTenantRecord)
+        self.assertIsNotNone(config)
+        config = cast(dict[str, Any], config)
+        self.assertTrue(config["allow_global_queries"])
+        self.assertFalse(config["auto_migrate"])
+
+    def test_get_models_for_migration_excludes_opted_out_tenant_models(self):
+        tenant_models = get_models_for_migration(MODEL_TYPE_TENANT)
+
+        self.assertIn(DummyTenantRecord, tenant_models)
+        self.assertNotIn(DummyGlobalTenantRecord, tenant_models)
 
 
 class SchemaStrategyTests(TestCase):
@@ -555,8 +570,6 @@ class BootstrapTests(TestCase):
             slug="acme-db",
             name="Acme DB",
             isolation_mode=Tenant.IsolationMode.DATABASE,
-            created_by=self.user,
-            updated_by=self.user,
         )
 
         databases = cast(dict[str, dict[str, object]], connections.databases)
@@ -644,8 +657,6 @@ class ProvisioningTests(TestCase):
             slug="acme-db",
             name="Acme DB",
             isolation_mode=Tenant.IsolationMode.DATABASE,
-            created_by=self.user,
-            updated_by=self.user,
         )
         tenant.set_provisioning_connection_string(
             "postgresql://admin:secret@localhost:5432/postgres"
@@ -730,8 +741,6 @@ class TenantAPITests(TestCase):
             slug="delete-me",
             name="Delete Me",
             isolation_mode=Tenant.IsolationMode.SCHEMA,
-            created_by=self.owner,
-            updated_by=self.owner,
         )
 
         response = self.client.delete(f"/api/tenants/{tenant.slug}/")
@@ -745,8 +754,6 @@ class TenantAPITests(TestCase):
             slug="schema-test",
             name="Schema Test",
             isolation_mode=Tenant.IsolationMode.SCHEMA,
-            created_by=self.owner,
-            updated_by=self.owner,
         )
 
         response = self.client.post(
@@ -770,8 +777,6 @@ class TenantMiddlewareTests(TestCase):
             slug="acme",
             name="Acme",
             isolation_mode=Tenant.IsolationMode.SCHEMA,
-            created_by=self.user,
-            updated_by=self.user,
         )
 
     def tearDown(self):
@@ -791,9 +796,10 @@ class TenantMiddlewareTests(TestCase):
         middleware = TenantMiddleware(get_response)
         response = middleware(request)
 
+        request = cast(Any, request)
         self.assertEqual(response, "ok")
-        self.assertEqual(getattr(request, "tenant").pk, self.tenant.pk)
-        self.assertIsInstance(getattr(request, "tenant_strategy"), SchemaStrategy)
+        self.assertEqual(request.tenant.pk, self.tenant.pk)
+        self.assertIsInstance(request.tenant_strategy, SchemaStrategy)
         self.assertEqual(seen["tenant"].pk, self.tenant.pk)
         self.assertIsInstance(seen["strategy"], SchemaStrategy)
         self.assertIsNone(get_current_tenant())
@@ -810,9 +816,10 @@ class TenantMiddlewareTests(TestCase):
         middleware = TenantMiddleware(get_response)
         response = middleware(request)
 
+        request = cast(Any, request)
         self.assertEqual(response, "ok")
-        self.assertIsNone(getattr(request, "tenant"))
-        self.assertIsNone(getattr(request, "tenant_strategy"))
+        self.assertIsNone(request.tenant)
+        self.assertIsNone(request.tenant_strategy)
 
     def test_middleware_uses_session_tenant_inside_admin(self):
         request = self.factory.get("/admin/")
@@ -828,8 +835,8 @@ class TenantMiddlewareTests(TestCase):
         response = middleware(request)
 
         self.assertEqual(response, "ok")
-        self.assertEqual(getattr(request, "tenant").pk, self.tenant.pk)
-        self.assertIsInstance(getattr(request, "tenant_strategy"), SchemaStrategy)
+        self.assertEqual(request.tenant.pk, self.tenant.pk)
+        self.assertIsInstance(request.tenant_strategy, SchemaStrategy)
 
 
 class TenantAdminSiteTests(TestCase):
@@ -843,8 +850,6 @@ class TenantAdminSiteTests(TestCase):
             slug="acme",
             name="Acme",
             isolation_mode=Tenant.IsolationMode.SCHEMA,
-            created_by=self.user,
-            updated_by=self.user,
         )
 
     def _request(self, method: str = "get", path: str = "/admin/tenant-switch/"):
@@ -952,3 +957,203 @@ class TenantAdminSiteTests(TestCase):
 
         self.assertEqual(response.status_code, 302)
         op_mock.assert_called_once()
+
+
+class _DummyTokenSerializer:
+    def get_token(self, user: Any) -> dict[str, Any]:
+        return {"sub": str(user.pk)}
+
+
+class _TenantAwareTokenSerializer(TenantClaimsMixin, _DummyTokenSerializer):
+    pass
+
+
+class _PayloadToken:
+    def __init__(self, payload: dict[str, Any]) -> None:
+        self.payload = payload
+
+
+class _BackendWithoutHeader:
+    def __init__(self, result: tuple[Any, Any] | None) -> None:
+        self.result = result
+
+    def authenticate(self, request: Any) -> tuple[Any, Any] | None:
+        return self.result
+
+
+class _BackendWithHeader(_BackendWithoutHeader):
+    def authenticate_header(self, request: Any) -> str:
+        return "Custom"
+
+
+class _ConfigurableJWTBackend(_BackendWithHeader):
+    def __init__(self) -> None:
+        super().__init__((User(), {"tenant_slug": "config-tenant"}))
+
+
+class AuthHelpersTests(TestCase):
+    def setUp(self):
+        self.factory = RequestFactory()
+        self.user = User.objects.create_user(
+            username="authuser", email="auth@example.com", password="secret"
+        )
+        self.tenant = Tenant.objects.create(
+            slug="auth-tenant",
+            name="Auth Tenant",
+            isolation_mode=Tenant.IsolationMode.SCHEMA,
+        )
+
+    def tearDown(self):
+        clear_current_tenant()
+
+    def test_claims_mixin_adds_tenant_slug_when_context_exists(self):
+        set_current_tenant(self.tenant)
+
+        token = _TenantAwareTokenSerializer().get_token(self.user)
+
+        self.assertEqual(token["tenant_slug"], self.tenant.slug)
+        self.assertEqual(token["sub"], str(self.user.pk))
+
+    def test_claims_mixin_leaves_token_unchanged_without_tenant_context(self):
+        token = _TenantAwareTokenSerializer().get_token(self.user)
+
+        self.assertEqual(token, {"sub": str(self.user.pk)})
+
+    def test_token_validator_passes_when_tenant_matches(self):
+        validator = TenantTokenValidator()
+        request = self.factory.get("/api/")
+        set_current_tenant(self.tenant)
+
+        validator.validate_tenant({"tenant_slug": self.tenant.slug}, request)
+
+    def test_token_validator_fails_when_claim_is_missing(self):
+        validator = TenantTokenValidator()
+        request = self.factory.get("/api/")
+        set_current_tenant(self.tenant)
+
+        with self.assertRaises(AuthenticationFailed) as exc:
+            validator.validate_tenant({}, request)
+
+        self.assertIn("Token does not contain tenant information", str(exc.exception))
+
+    def test_token_validator_fails_when_tenant_context_is_missing(self):
+        validator = TenantTokenValidator()
+        request = self.factory.get("/api/")
+
+        with self.assertRaises(AuthenticationFailed) as exc:
+            validator.validate_tenant({"tenant_slug": self.tenant.slug}, request)
+
+        self.assertIn("No tenant context available", str(exc.exception))
+
+    def test_token_validator_fails_when_tenant_mismatches(self):
+        validator = TenantTokenValidator()
+        request = self.factory.get("/api/")
+        set_current_tenant(self.tenant)
+
+        with self.assertRaises(AuthenticationFailed) as exc:
+            validator.validate_tenant({"tenant_slug": "other-tenant"}, request)
+
+        self.assertIn(self.tenant.slug, str(exc.exception))
+        self.assertIn("other-tenant", str(exc.exception))
+
+    def test_jwt_authentication_returns_none_when_backend_returns_none(self):
+        authentication = TenantJWTAuthentication(backend=_BackendWithoutHeader(None))
+
+        result = authentication.authenticate(self.factory.get("/api/"))
+
+        self.assertIsNone(result)
+
+    def test_jwt_authentication_validates_dict_tokens(self):
+        backend = _BackendWithoutHeader((self.user, {"tenant_slug": self.tenant.slug}))
+        authentication = TenantJWTAuthentication(backend=backend)
+        request = self.factory.get("/api/")
+        set_current_tenant(self.tenant)
+
+        result = authentication.authenticate(request)
+
+        self.assertIsNotNone(result)
+        assert result is not None
+        self.assertEqual(result[0], self.user)
+        self.assertEqual(result[1]["tenant_slug"], self.tenant.slug)
+
+    def test_jwt_authentication_validates_payload_attribute_tokens(self):
+        token = _PayloadToken({"tenant_slug": self.tenant.slug})
+        backend = _BackendWithoutHeader((self.user, token))
+        authentication = TenantJWTAuthentication(backend=backend)
+        request = self.factory.get("/api/")
+        set_current_tenant(self.tenant)
+
+        result = authentication.authenticate(request)
+
+        self.assertIsNotNone(result)
+        assert result is not None
+        self.assertEqual(result[1], token)
+
+    def test_jwt_authentication_skips_validation_for_anonymous_user(self):
+        backend = _BackendWithoutHeader((AnonymousUser(), object()))
+        authentication = TenantJWTAuthentication(backend=backend)
+
+        result = authentication.authenticate(self.factory.get("/api/"))
+
+        self.assertIsNotNone(result)
+        assert result is not None
+        self.assertIsInstance(result[0], AnonymousUser)
+
+    def test_jwt_authentication_returns_bearer_without_backend_header(self):
+        authentication = TenantJWTAuthentication(backend=_BackendWithoutHeader(None))
+
+        header = authentication.authenticate_header(self.factory.get("/api/"))
+
+        self.assertEqual(header, "Bearer")
+
+    def test_jwt_authentication_delegates_authenticate_header_when_available(self):
+        authentication = TenantJWTAuthentication(backend=_BackendWithHeader(None))
+
+        header = authentication.authenticate_header(self.factory.get("/api/"))
+
+        self.assertEqual(header, "Custom")
+
+    def test_jwt_authentication_raises_clear_error_without_backend(self):
+        authentication = TenantJWTAuthentication()
+
+        with self.assertRaises(AuthenticationFailed) as exc:
+            authentication.authenticate(self.factory.get("/api/"))
+
+        self.assertIn("No JWT backend configured", str(exc.exception))
+        self.assertIn("future phase", str(exc.exception))
+
+    def test_jwt_authentication_raises_clear_error_for_unsupported_token(self):
+        backend = _BackendWithoutHeader((self.user, object()))
+        authentication = TenantJWTAuthentication(backend=backend)
+        request = self.factory.get("/api/")
+        set_current_tenant(self.tenant)
+
+        with self.assertRaises(AuthenticationFailed) as exc:
+            authentication.authenticate(request)
+
+        self.assertIn("Unsupported token representation", str(exc.exception))
+        self.assertIn("future phase", str(exc.exception))
+
+    @override_settings(TENANTKIT_JWT_BACKEND="tenantkit.tests._ConfigurableJWTBackend")
+    def test_jwt_authentication_loads_backend_from_settings(self):
+        authentication = TenantJWTAuthentication()
+        request = self.factory.get("/api/")
+        config_tenant = Tenant.objects.create(
+            slug="config-tenant",
+            name="Configured Tenant",
+            isolation_mode=Tenant.IsolationMode.SCHEMA,
+        )
+        set_current_tenant(config_tenant)
+
+        result = authentication.authenticate(request)
+
+        self.assertIsNotNone(result)
+        assert result is not None
+        self.assertEqual(result[1]["tenant_slug"], config_tenant.slug)
+
+    @override_settings(TENANTKIT_JWT_BACKEND="tenantkit.missing.DoesNotExist")
+    def test_jwt_authentication_raises_improperly_configured_for_invalid_backend(self):
+        with self.assertRaises(ImproperlyConfigured) as exc:
+            TenantJWTAuthentication()
+
+        self.assertIn("Could not import JWT backend", str(exc.exception))

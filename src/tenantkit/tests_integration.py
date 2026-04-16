@@ -5,6 +5,8 @@ These tests require a running PostgreSQL instance.
 They create and drop real databases during execution.
 """
 
+# pyright: reportCallIssue=false, reportArgumentType=false, reportOptionalMemberAccess=false
+
 import os
 import uuid
 from unittest import skipIf
@@ -13,8 +15,8 @@ from urllib.parse import unquote, urlparse
 from django.contrib.auth import get_user_model
 from django.test import TestCase, override_settings
 
-from tenantkit.models import Tenant
 from tenantkit.bootstrap import unregister_database_tenant_connection
+from tenantkit.models import Tenant
 from tenantkit.provisioning import (
     database_exists,
     ensure_database_exists,
@@ -206,8 +208,6 @@ class DatabaseProvisioningIntegrationTests(TestCase):
             connection_string=encrypt_text(
                 self.test_db_url
             ),  # Required for manual mode
-            created_by=self.user,
-            updated_by=self.user,
         )
         tenant.set_provisioning_connection_string(PROVISIONING_URL)
         tenant.save()
@@ -286,8 +286,6 @@ class DatabaseProvisioningIntegrationTests(TestCase):
             provisioning_mode=Tenant.ProvisioningMode.MANUAL,
             connection_alias=f"tenant_{tenant_slug}",
             connection_string=encrypt_text(db_url),
-            created_by=self.user,
-            updated_by=self.user,
         )
         tenant.set_provisioning_connection_string(PROVISIONING_URL)
         tenant.save()
@@ -363,7 +361,7 @@ class DatabaseProvisioningCleanupTests(TestCase):
 
         try:
             # Create multiple databases
-            for i in range(3):
+            for _i in range(3):
                 db_name = f"test_multi_{uuid.uuid4().hex[:8]}"
                 db_url = f"postgresql://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_HOST}:{POSTGRES_PORT}/{db_name}"
                 db_names.append(db_name)

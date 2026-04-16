@@ -2,24 +2,30 @@
 
 ## Objetivo
 
-Definir un modelo de autenticación y administración compatible con:
+Definir una arquitectura de autenticación y administración compatible con:
 
 - superusuario global
-- usuarios locales por tenant
+- usuarios independientes por tenant
 - un único `/admin/`
-- activación de tenant vía sesión
+- activación de tenant vía sesión en admin
+- soporte opcional para autenticación JWT tenant-aware
 
 ## Principio central
 
-El admin web no debe depender de headers para su navegación normal.
+django-tenantkit usa una arquitectura de **usuarios independientes por tenant**.
 
-Para el admin, el tenant activo se resuelve por **sesión**.
+- cada tenant tiene su propia tabla `auth_user`
+- no existe sincronización entre tenants
+- el mismo email puede existir en múltiples tenants
+- la pertenencia es implícita: si el usuario existe en la DB del tenant, pertenece a ese tenant
+
+El admin web no depende de headers para su navegación normal. En admin, el tenant activo se resuelve por **sesión**.
 
 ## Modelo de usuarios
 
 ### Usuarios globales
 
-Viven en shared/public.
+Viven en la base shared/default.
 
 Responsabilidades:
 
@@ -27,17 +33,32 @@ Responsabilidades:
 - gestión de tenants
 - configuración global
 - auditoría global
-- entrada/switch controlado a un tenant
+- entrada y cambio controlado a modo tenant
 
 ### Usuarios locales
 
-Viven dentro del tenant.
+Viven dentro de cada tenant.
 
 Responsabilidades:
 
 - administración local del tenant
-- operación diaria sobre datos del tenant
-- gestión interna del espacio tenant-local
+- operación diaria sobre datos tenant-locales
+- gestión interna del espacio del tenant
+
+## DUAL_APPS
+
+Para que los modelos de autenticación existan tanto en la base default como en las bases/schemas tenant, tenantkit soporta `TENANTKIT_DUAL_APPS`.
+
+Configuración recomendada:
+
+```python
+TENANTKIT_DUAL_APPS = [
+    "django.contrib.auth",
+    "django.contrib.contenttypes",
+]
+```
+
+Esto permite que `auth_user` y sus dependencias se migren en todos los contextos necesarios.
 
 ## Login en `/admin/`
 
@@ -47,13 +68,11 @@ Un solo login con un campo opcional de tenant:
 - `username`
 - `password`
 
-## Flujos
-
 ### 1. Login global
 
 Si `tenant` está vacío:
 
-- autenticar en shared/public
+- autenticar en shared/default
 - crear sesión global
 - mostrar solo modelos globales
 
@@ -105,6 +124,11 @@ Responsabilidades:
 - solo modelos shared/public
 - no hay tenant activo
 
+### Modo tenant
+
+- visible para superusuarios globales en tenant switch o para usuarios locales autenticados con tenant
+- solo modelos del tenant activo
+
 ### Tenant switcher
 
 El admin expone una vista de cambio de tenant en `/admin/tenant-switch/`.
@@ -114,17 +138,7 @@ El admin expone una vista de cambio de tenant en `/admin/tenant-switch/`.
 - persiste en sesión:
   - `auth_scope`
   - `active_tenant_id`
-- `default` significa "sin tenant activo"
-
-## Operation errors
-
-When a tenant operation fails in admin, the UI shows a friendly message.
-The technical detail is kept in logs, while the user sees a plain-language explanation.
-
-### Modo tenant
-
-- visible para superusuarios globales en tenant switch o para usuarios locales autenticados con tenant
-- solo modelos del tenant activo
+- `default` significa “sin tenant activo”
 
 ## TenantSharedModel
 
@@ -135,66 +149,59 @@ The technical detail is kept in logs, while the user sees a plain-language expla
 
 En admin, este contrato se usa para filtrar resultados según el tenant activo.
 
-## AdminSite y decisión de scope
+## Helpers de autenticación tenant-aware
 
-El `AdminSite` decide qué modelos mostrar según el scope activo:
+tenantkit incluye helpers opcionales en `tenantkit.auth`:
 
-### Shared mode (default/global)
-- Muestra modelos registrados con `SharedScopeModelAdmin`
-- Incluye catálogo de tenants y configuración global
-- No muestra modelos tenant-local
+1. `TenantClaimsMixin`
+2. `TenantTokenValidator`
+3. `TenantJWTAuthentication`
 
-### Tenant mode
-- Muestra modelos `TenantSharedModel` filtrados por `allowed_tenants`
-- Si `allowed_tenants` está vacío, el modelo es visible (shared por defecto)
-- Si tiene valores, solo visible para esos tenants
-- El queryset se filtra automáticamente por el tenant activo en sesión
+Estos helpers son una **base agnóstica de backend**.
 
-### Lógica de filtrado
+- ayudan a agregar `tenant_slug` al token
+- validan que el claim del token coincida con el tenant actual
+- permiten envolver un backend de autenticación DRF/JWT
+
+### Importante
+
+La **integración concreta** con una tecnología JWT específica queda diferida a una fase futura. Hoy tenantkit provee la base y los puntos de integración, no una implementación cerrada para un proveedor particular.
+
+### Ejemplo de integración futura
 
 ```python
-# En TenantSharedModelAdmin.get_queryset()
-queryset.filter(
-    Q(allowed_tenants__isnull=True) | Q(allowed_tenants=current_tenant)
-).distinct()
+from tenantkit.auth import TenantClaimsMixin
+
+
+class MyTokenSerializer(TenantClaimsMixin, SomeJWTSerializer):
+    pass
 ```
 
-Esto permite:
-- Modelos globales para todos los tenants
-- Modelos restringidos a una lista específica
-- Un solo admin que adapta su vista según el contexto
+```python
+from tenantkit.auth import TenantJWTAuthentication
 
-## Base tenant-aware
 
-La infraestructura base para admins tenant-aware vive en `multitenant.admin_base`.
+class MyProtectedView(APIView):
+    authentication_classes = [TenantJWTAuthentication]
+```
 
-Provee:
+## Seguridad cross-tenant
 
-- resolución del tenant actual desde `request.tenant` o `contextvars`
-- scoping automático de querysets por el campo `tenant`
-- asignación automática del tenant al crear objetos nuevos
-- una base `TenantAwareModelAdmin` reutilizable para futuros modelos tenant-locales
+Riesgo principal: usar un token emitido para Tenant A en Tenant B.
 
-Regla:
-
-- esta base no registra modelos concretos todavía; solo prepara el patrón
-
-## Reglas de permisos
-
-- un usuario local no debe ver modelos globales
-- un usuario global no debe operar datos tenant sin contexto explícito
-- sin tenant activo no deben exponerse modelos tenant
+`TenantTokenValidator` existe para validar automáticamente que el `tenant_slug` del token coincida con el tenant resuelto en el request actual.
 
 ## Authentication backends
 
-Para este diseño es esperable terminar con más de un backend de autenticación.
+Este diseño permite más de un backend de autenticación.
 
 Posibles roles:
 
 - backend global
 - backend tenant-aware para usuarios locales
+- backend JWT integrado por proyecto
 
-La decisión concreta de implementación se documentará mejor en la fase de diseño del auth subsystem.
+La elección concreta del proveedor o librería queda del lado del proyecto consumidor.
 
 ## Riesgos
 
@@ -202,6 +209,7 @@ La decisión concreta de implementación se documentará mejor en la fase de dis
 - permitir login tenant sin validar tenant
 - dejar tenant pegado en sesión sin cleanup correcto
 - permitir al admin navegar modelos tenant sin contexto válido
+- asumir que tenantkit ya integra una librería JWT concreta cuando hoy solo provee la base
 
 ## Auditoría recomendada
 

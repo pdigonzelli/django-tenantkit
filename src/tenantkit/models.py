@@ -4,8 +4,7 @@ from typing import Any
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
-from django.db import models
-from django.db import transaction
+from django.db import models, transaction
 from django.utils import timezone
 from django.utils.text import slugify
 
@@ -17,13 +16,40 @@ from .model_config import shared_model
 logger = logging.getLogger(__name__)
 
 
-class AuditModel(models.Model):
-    objects = AuditManager()
-    all_objects = AllObjectsManager()
+class TimestampModel(models.Model):
+    """Base abstract model with timestamps and soft-delete support (no user tracking)."""
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     deleted_at = models.DateTimeField(null=True, blank=True, db_index=True)
+
+    objects = AuditManager()
+    all_objects = AllObjectsManager()
+
+    class Meta:  # pyright: ignore[reportIncompatibleVariableOverride]
+        abstract = True
+
+    @property
+    def deleted(self) -> bool:
+        return self.deleted_at is not None
+
+    def soft_delete(self, *, commit: bool = True, **kwargs: Any) -> None:
+        """Soft delete without user tracking. Accepts **kwargs for backward compatibility."""
+        self.deleted_at = timezone.now()
+
+        if commit:
+            self.save(update_fields=["deleted_at", "updated_at"])
+
+    def restore(self, *, commit: bool = True, **kwargs: Any) -> None:
+        """Restore without user tracking. Accepts **kwargs for backward compatibility."""
+        self.deleted_at = None
+
+        if commit:
+            self.save(update_fields=["deleted_at", "updated_at"])
+
+
+class AuditModel(TimestampModel):
+    """Abstract model with timestamps, soft-delete, and user tracking."""
 
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -47,14 +73,11 @@ class AuditModel(models.Model):
         blank=True,
     )
 
-    class Meta:
+    class Meta:  # pyright: ignore[reportIncompatibleVariableOverride]
         abstract = True
 
-    @property
-    def deleted(self) -> bool:
-        return self.deleted_at is not None
-
-    def soft_delete(self, *, user=None, commit: bool = True) -> None:
+    def soft_delete(self, *, user=None, commit: bool = True, **kwargs: Any) -> None:
+        """Soft delete with user tracking."""
         self.deleted_at = timezone.now()
         self.deleted_by = user
         self.updated_by = user
@@ -64,7 +87,8 @@ class AuditModel(models.Model):
                 update_fields=["deleted_at", "deleted_by", "updated_at", "updated_by"]
             )
 
-    def restore(self, *, user=None, commit: bool = True) -> None:
+    def restore(self, *, user=None, commit: bool = True, **kwargs: Any) -> None:
+        """Restore with user tracking."""
         self.deleted_at = None
         self.deleted_by = user
         self.updated_by = user
@@ -76,9 +100,6 @@ class AuditModel(models.Model):
 
 
 class TenantSharedModel(models.Model):
-    objects = TenantSharedManager()
-    all_objects = models.Manager()
-
     allowed_tenants = models.ManyToManyField(
         "Tenant",
         blank=True,
@@ -86,12 +107,15 @@ class TenantSharedModel(models.Model):
         help_text="Empty means shared by all tenants; otherwise only listed tenants can access it.",
     )
 
+    objects = TenantSharedManager()
+    all_objects = models.Manager()  # noqa: DJ012
+
     class Meta:
         abstract = True
 
 
 @shared_model
-class Tenant(AuditModel):
+class Tenant(TimestampModel):
     class IsolationMode(models.TextChoices):
         SCHEMA = "schema"
         DATABASE = "database"
@@ -120,18 +144,18 @@ class Tenant(AuditModel):
         unique=True,
         help_text="Required when isolation_mode='schema'.",
     )
-    connection_alias = models.CharField(
+    connection_alias = models.CharField(  # noqa: DJ001
         max_length=100,
         blank=True,
         null=True,
         help_text="Required when isolation_mode='database'.",
     )
-    connection_string = models.TextField(
+    connection_string = models.TextField(  # noqa: DJ001
         blank=True,
         null=True,
         help_text="Encrypted connection URL for database tenants.",
     )
-    provisioning_connection_string = models.TextField(
+    provisioning_connection_string = models.TextField(  # noqa: DJ001
         blank=True,
         null=True,
         help_text="Encrypted admin connection URL used to provision tenant databases.",
@@ -142,6 +166,34 @@ class Tenant(AuditModel):
 
     def __str__(self) -> str:
         return str(self.name)
+
+    def save(self, *args: Any, **kwargs: Any):
+        if not getattr(self, "_skip_isolation_fields", False):
+            self.ensure_isolation_fields()
+        result = super().save(*args, **kwargs)
+
+        # Skip auto-provisioning if explicitly requested (e.g., when updating connection strings manually)
+        if (
+            not getattr(self, "_skip_auto_provisioning", False)
+            and self.isolation_mode == self.IsolationMode.DATABASE
+        ):
+            from .bootstrap import unregister_database_tenant_connection
+            from .provisioning import ensure_database_tenant_ready
+
+            if (
+                self.is_active
+                and not self.deleted
+                and self.get_provisioning_connection_string()
+            ):
+                transaction.on_commit(lambda: ensure_database_tenant_ready(self))
+            else:
+                transaction.on_commit(
+                    lambda: unregister_database_tenant_connection(
+                        str(self.connection_alias) if self.connection_alias else None
+                    )
+                )
+
+        return result
 
     def _normalized_slug(self) -> str:
         return slugify(self.slug).replace("-", "_")
@@ -266,14 +318,14 @@ class Tenant(AuditModel):
         return decrypt_text(str(encrypted))
 
     def soft_delete(
-        self, *, user=None, commit: bool = True, delete_database: bool = False
+        self, *, commit: bool = True, delete_database: bool = False, **kwargs: Any
     ) -> None:
         """Soft delete tenant. If delete_database=True, also drops physical database and user."""
         # Delete database resources if requested (only for database tenants)
         if delete_database and self.isolation_mode == self.IsolationMode.DATABASE:
             self.delete_database_resources()
 
-        super().soft_delete(user=user, commit=False)
+        super().soft_delete(commit=False)
         self.is_active = False
 
         if commit:
@@ -282,10 +334,8 @@ class Tenant(AuditModel):
                 self.save(
                     update_fields=[
                         "deleted_at",
-                        "deleted_by",
                         "is_active",
                         "updated_at",
-                        "updated_by",
                     ]
                 )
             finally:
@@ -312,8 +362,8 @@ class Tenant(AuditModel):
             logger.error("Failed to delete database resources: %s", exc)
             return False
 
-    def restore(self, *, user=None, commit: bool = True) -> None:
-        super().restore(user=user, commit=False)
+    def restore(self, *, commit: bool = True, **kwargs: Any) -> None:
+        super().restore(commit=False)
         self.is_active = True
 
         if commit:
@@ -322,111 +372,16 @@ class Tenant(AuditModel):
                 self.save(
                     update_fields=[
                         "deleted_at",
-                        "deleted_by",
                         "is_active",
                         "updated_at",
-                        "updated_by",
                     ]
                 )
             finally:
                 self._skip_isolation_fields = False
 
-    def save(self, *args: Any, **kwargs: Any):
-        if not getattr(self, "_skip_isolation_fields", False):
-            self.ensure_isolation_fields()
-        result = super().save(*args, **kwargs)
-
-        # Skip auto-provisioning if explicitly requested (e.g., when updating connection strings manually)
-        if not getattr(self, "_skip_auto_provisioning", False):
-            if self.isolation_mode == self.IsolationMode.DATABASE:
-                from .bootstrap import (
-                    unregister_database_tenant_connection,
-                )
-                from .provisioning import ensure_database_tenant_ready
-
-                if (
-                    self.is_active
-                    and not self.deleted
-                    and self.get_provisioning_connection_string()
-                ):
-                    transaction.on_commit(lambda: ensure_database_tenant_ready(self))
-                else:
-                    transaction.on_commit(
-                        lambda: unregister_database_tenant_connection(
-                            str(self.connection_alias)
-                            if self.connection_alias
-                            else None
-                        )
-                    )
-
-        return result
-
 
 @shared_model
-class TenantMembership(AuditModel):
-    class Role(models.TextChoices):
-        OWNER = "owner"
-        ADMIN = "admin"
-        MEMBER = "member"
-        VIEWER = "viewer"
-
-    tenant = models.ForeignKey(
-        Tenant,
-        on_delete=models.CASCADE,
-        related_name="memberships",
-    )
-    user = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.PROTECT,
-        related_name="tenant_memberships",
-    )
-    role = models.CharField(max_length=20, choices=Role.choices, default=Role.MEMBER)
-    is_active = models.BooleanField(default=True, db_index=True)  # type: ignore[call-arg]
-
-    class Meta(AuditModel.Meta):  # type: ignore[misc]
-        constraints = [
-            models.UniqueConstraint(
-                fields=["tenant", "user"],
-                name="unique_tenant_membership",
-            )
-        ]
-
-    def __str__(self) -> str:
-        return f"{self.user} @ {self.tenant}"
-
-    def soft_delete(self, *, user=None, commit: bool = True) -> None:
-        super().soft_delete(user=user, commit=False)
-        self.is_active = False
-
-        if commit:
-            self.save(
-                update_fields=[
-                    "deleted_at",
-                    "deleted_by",
-                    "updated_by",
-                    "is_active",
-                    "updated_at",
-                ]
-            )
-
-    def restore(self, *, user=None, commit: bool = True) -> None:
-        super().restore(user=user, commit=False)
-        self.is_active = True
-
-        if commit:
-            self.save(
-                update_fields=[
-                    "deleted_at",
-                    "deleted_by",
-                    "updated_by",
-                    "is_active",
-                    "updated_at",
-                ]
-            )
-
-
-@shared_model
-class TenantInvitation(AuditModel):
+class TenantInvitation(TimestampModel):
     class Status(models.TextChoices):
         PENDING = "pending"
         ACCEPTED = "accepted"
@@ -448,15 +403,14 @@ class TenantInvitation(AuditModel):
     )
     expires_at = models.DateTimeField(null=True, blank=True)
     accepted_at = models.DateTimeField(null=True, blank=True)
-    accepted_by = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.PROTECT,
-        related_name="tenant_invitations_accepted",
-        null=True,
+    accepted_by = models.CharField(
+        max_length=255,
         blank=True,
+        default="",
+        help_text="Identifier of the user who accepted (stored as string for cross-DB compatibility).",
     )
 
-    class Meta(AuditModel.Meta):  # type: ignore[misc]
+    class Meta(TimestampModel.Meta):  # type: ignore[misc]
         constraints = [
             models.UniqueConstraint(
                 fields=["tenant", "email"],
@@ -471,11 +425,10 @@ class TenantInvitation(AuditModel):
     def expired(self) -> bool:
         return bool(self.expires_at and self.expires_at <= timezone.now())
 
-    def mark_accepted(self, *, user=None, commit: bool = True) -> None:
+    def mark_accepted(self, *, user: str | None = None, commit: bool = True) -> None:
         self.status = self.Status.ACCEPTED
         self.accepted_at = timezone.now()
-        self.accepted_by = user
-        self.updated_by = user
+        self.accepted_by = user or ""
 
         if commit:
             self.save(
@@ -483,21 +436,19 @@ class TenantInvitation(AuditModel):
                     "status",
                     "accepted_at",
                     "accepted_by",
-                    "updated_by",
                     "updated_at",
                 ]
             )
 
-    def revoke(self, *, user=None, commit: bool = True) -> None:
+    def revoke(self, *, commit: bool = True, **kwargs: Any) -> None:
         self.status = self.Status.REVOKED
-        self.updated_by = user
 
         if commit:
-            self.save(update_fields=["status", "updated_by", "updated_at"])
+            self.save(update_fields=["status", "updated_at"])
 
 
 @shared_model
-class TenantSetting(AuditModel):
+class TenantSetting(TimestampModel):
     tenant = models.ForeignKey(
         Tenant,
         on_delete=models.CASCADE,
@@ -506,7 +457,7 @@ class TenantSetting(AuditModel):
     key = models.CharField(max_length=120)
     value = models.JSONField(default=dict, blank=True)
 
-    class Meta(AuditModel.Meta):  # type: ignore[misc]
+    class Meta(TimestampModel.Meta):  # type: ignore[misc]
         constraints = [
             models.UniqueConstraint(
                 fields=["tenant", "key"],

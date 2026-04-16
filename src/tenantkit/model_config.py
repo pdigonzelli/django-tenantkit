@@ -27,10 +27,13 @@ Usage:
         name = models.CharField(max_length=100)
 """
 
+# ruff: noqa: UP047
+
 from __future__ import annotations
 
 import logging
-from typing import Any, Callable, ClassVar, TypeVar
+from collections.abc import Callable
+from typing import Any, ClassVar, TypeVar, cast, overload
 
 from django.db import models
 
@@ -89,8 +92,8 @@ class ModelRegistry:
             "model_class": model_class,
             "model_type": model_type,
             "full_name": full_name,
-            "app_label": model_class._meta.app_label,
-            "model_name": model_class._meta.model_name,
+            "app_label": cast(Any, model_class)._meta.app_label,
+            "model_name": cast(Any, model_class)._meta.model_name,
             "auto_migrate": options.get("auto_migrate", True),
             "allow_global_queries": options.get("allow_global_queries", False),
             **options,
@@ -175,15 +178,29 @@ class ModelRegistry:
 
 
 # Type variable for generic model class
-T = TypeVar("T", bound=type[models.Model])
+ModelT = TypeVar("ModelT", bound=type[models.Model])
 
 
+@overload
+def shared_model(_cls: ModelT, /) -> ModelT: ...  # noqa: UP047
+
+
+@overload
 def shared_model(
-    _cls: T | None = None,
+    _cls: None = None,
     *,
     auto_migrate: bool = True,
     **options: Any,
-) -> T | Callable[[T], T]:
+) -> Callable[[ModelT], ModelT]: ...
+
+
+# noqa: UP047
+def shared_model(
+    _cls: ModelT | None = None,
+    *,
+    auto_migrate: bool = True,
+    **options: Any,
+) -> ModelT | Callable[[ModelT], ModelT]:
     """
     Decorator to mark a model as shared (global/default database).
 
@@ -204,29 +221,47 @@ def shared_model(
             pass
     """
 
-    def decorator(cls: T) -> T:
-        return ModelRegistry.register(
-            cls,
-            MODEL_TYPE_SHARED,
-            auto_migrate=auto_migrate,
-            **options,
+    def decorator(cls: ModelT) -> ModelT:
+        return cast(
+            ModelT,
+            ModelRegistry.register(
+                cls,
+                MODEL_TYPE_SHARED,
+                auto_migrate=auto_migrate,
+                **options,
+            ),
         )
 
     if _cls is None:
         # Called as @shared_model(...) with parentheses
         return decorator
-    else:
-        # Called as @shared_model without parentheses
-        return decorator(_cls)
+
+    # Called as @shared_model without parentheses
+    return decorator(_cls)
 
 
+@overload
+def tenant_model(_cls: ModelT, /) -> ModelT: ...  # noqa: UP047
+
+
+@overload
 def tenant_model(
-    _cls: T | None = None,
+    _cls: None = None,
     *,
     auto_migrate: bool = True,
     allow_global_queries: bool = False,
     **options: Any,
-) -> T | Callable[[T], T]:
+) -> Callable[[ModelT], ModelT]: ...
+
+
+# noqa: UP047
+def tenant_model(
+    _cls: ModelT | None = None,
+    *,
+    auto_migrate: bool = True,
+    allow_global_queries: bool = False,
+    **options: Any,
+) -> ModelT | Callable[[ModelT], ModelT]:
     """
     Decorator to mark a model as tenant-specific.
 
@@ -248,21 +283,24 @@ def tenant_model(
             pass
     """
 
-    def decorator(cls: T) -> T:
-        return ModelRegistry.register(
-            cls,
-            MODEL_TYPE_TENANT,
-            auto_migrate=auto_migrate,
-            allow_global_queries=allow_global_queries,
-            **options,
+    def decorator(cls: ModelT) -> ModelT:
+        return cast(
+            ModelT,
+            ModelRegistry.register(
+                cls,
+                MODEL_TYPE_TENANT,
+                auto_migrate=auto_migrate,
+                allow_global_queries=allow_global_queries,
+                **options,
+            ),
         )
 
     if _cls is None:
         # Called as @tenant_model(...) with parentheses
         return decorator
-    else:
-        # Called as @tenant_model without parentheses
-        return decorator(_cls)
+
+    # Called as @tenant_model without parentheses
+    return decorator(_cls)
 
 
 # Note: SharedModel and TenantModel mixins removed because they fail

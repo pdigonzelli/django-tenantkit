@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import suppress
 from typing import cast
 
 from django.db import connections
@@ -22,10 +23,8 @@ def register_database_tenant_connection(tenant: Tenant) -> bool:
 
     databases = cast(dict[str, dict[str, object]], connections.databases)
     if alias in databases:
-        try:
+        with suppress(Exception):  # pragma: no cover - best effort cleanup
             connections[alias].close()
-        except Exception:  # pragma: no cover - best effort cleanup
-            pass
     databases[alias] = parse_connection_url(connection_string)
     return True
 
@@ -38,10 +37,8 @@ def unregister_database_tenant_connection(alias: str | None) -> bool:
 
     databases = cast(dict[str, dict[str, object]], connections.databases)
     if alias in databases:
-        try:
+        with suppress(Exception):  # pragma: no cover - best effort cleanup
             connections[alias].close()
-        except Exception:  # pragma: no cover - best effort cleanup
-            pass
     return databases.pop(alias, None) is not None
 
 

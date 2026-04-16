@@ -8,7 +8,6 @@ from django.urls import path, reverse
 from tenantkit.core.context import get_current_tenant
 from tenantkit.models import Tenant
 
-
 SESSION_ACTIVE_TENANT_ID = "active_tenant_id"
 SESSION_AUTH_SCOPE = "auth_scope"
 AUTH_SCOPE_GLOBAL = "global"

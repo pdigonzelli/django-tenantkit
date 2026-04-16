@@ -93,6 +93,13 @@ DATABASE_ROUTERS = [
     "tenantkit.routers.TenantRouter",
 ]
 
+# Apps whose migrations run on BOTH the shared/default database AND tenant databases.
+# This allows each tenant to have its own auth_user and content_type tables.
+TENANTKIT_DUAL_APPS = [
+    "django.contrib.auth",
+    "django.contrib.contenttypes",
+]
+
 # Password validation
 # https://docs.djangoproject.com/en/6.0/ref/settings/#auth-password-validators
 

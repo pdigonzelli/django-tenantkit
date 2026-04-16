@@ -10,8 +10,8 @@ from urllib.parse import unquote, urlparse
 from django.core.management import call_command
 from django.db import connections
 
-from tenantkit.connections import parse_connection_url
 from tenantkit.backends.postgresql.base import activate_schema, deactivate_schema
+from tenantkit.connections import parse_connection_url
 from tenantkit.errors import SchemaProvisioningUnsupportedError
 
 if TYPE_CHECKING:
@@ -704,7 +704,7 @@ def ensure_database_exists(
         raise RuntimeError(f"Failed to create database {database_name}: {exc}") from exc
 
 
-def ensure_database_tenant_ready(tenant: "Tenant") -> bool:
+def ensure_database_tenant_ready(tenant: Tenant) -> bool:
     """Full provisioning flow: database, user, permissions, and registration."""
     if tenant.isolation_mode != tenant.IsolationMode.DATABASE:
         return False
@@ -777,7 +777,7 @@ def ensure_schema_exists(schema_name: str) -> bool:
     return True
 
 
-def migrate_schema_tenant(tenant: "Tenant") -> bool:
+def migrate_schema_tenant(tenant: Tenant) -> bool:
     if tenant.isolation_mode != tenant.IsolationMode.SCHEMA:
         return False
 
@@ -808,7 +808,7 @@ def migrate_database_tenant(tenant: Any) -> int:
     return 1
 
 
-def provision_tenant(tenant: "Tenant") -> bool:
+def provision_tenant(tenant: Tenant) -> bool:
     if tenant.isolation_mode == tenant.IsolationMode.DATABASE:
         connection_string = tenant.get_connection_string()
         if not connection_string:
@@ -847,7 +847,7 @@ def provision_tenant(tenant: "Tenant") -> bool:
     return False
 
 
-def migrate_tenant(tenant: "Tenant") -> bool:
+def migrate_tenant(tenant: Tenant) -> bool:
     if tenant.isolation_mode == tenant.IsolationMode.DATABASE:
         return bool(migrate_database_tenant(tenant))
 
@@ -857,7 +857,7 @@ def migrate_tenant(tenant: "Tenant") -> bool:
     return False
 
 
-def provision_and_migrate_tenant(tenant: "Tenant") -> bool:
+def provision_and_migrate_tenant(tenant: Tenant) -> bool:
     provision_tenant(tenant)
     return migrate_tenant(tenant)
 

@@ -1,17 +1,17 @@
 from __future__ import annotations
 
-from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiExample
+from drf_spectacular.utils import OpenApiExample, OpenApiParameter, extend_schema
 from rest_framework import generics, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from tenantkit.errors import MultitenantError
+from tenantkit.models import Tenant
 from tenantkit.provisioning import (
+    migrate_tenant,
     provision_and_migrate_tenant,
     provision_tenant,
-    migrate_tenant,
 )
-from tenantkit.models import Tenant
 from tenantkit.serializers import TenantReadSerializer, TenantWriteSerializer
 
 

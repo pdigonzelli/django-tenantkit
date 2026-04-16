@@ -9,6 +9,8 @@ Usage:
     python manage.py list_tenant_models --json
 """
 
+# pyright: reportAttributeAccessIssue=false
+
 import json
 from typing import Any
 
@@ -46,8 +48,8 @@ class Command(BaseCommand):
     def handle(self, *args: Any, **options: Any) -> None:
         model_type = options.get("type")
         app_label = options.get("app")
-        output_json = options.get("json")
-        include_unregistered = options.get("include_unregistered")
+        output_json = bool(options.get("json"))
+        include_unregistered = bool(options.get("include_unregistered"))
 
         # Build the data structure
         models_data = self._collect_models(

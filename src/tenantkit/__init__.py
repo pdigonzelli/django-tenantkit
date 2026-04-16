@@ -64,11 +64,15 @@ def _lazy_import(name: str):
         "TenantMiddleware": (".middleware", "TenantMiddleware"),
         # Models
         "AuditModel": (".models", "AuditModel"),
+        "TimestampModel": (".models", "TimestampModel"),
         "Tenant": (".models", "Tenant"),
-        "TenantMembership": (".models", "TenantMembership"),
         "TenantInvitation": (".models", "TenantInvitation"),
         "TenantSetting": (".models", "TenantSetting"),
         "TenantSharedModel": (".models", "TenantSharedModel"),
+        # Auth helpers
+        "TenantClaimsMixin": (".auth", "TenantClaimsMixin"),
+        "TenantTokenValidator": (".auth", "TenantTokenValidator"),
+        "TenantJWTAuthentication": (".auth", "TenantJWTAuthentication"),
     }
 
     if name not in module_map:
@@ -102,9 +106,13 @@ __all__ = [
     "get_current_strategy",
     "TenantMiddleware",
     "AuditModel",
+    "TimestampModel",
     "Tenant",
-    "TenantMembership",
     "TenantInvitation",
     "TenantSetting",
     "TenantSharedModel",
+    # Auth helpers
+    "TenantClaimsMixin",
+    "TenantTokenValidator",
+    "TenantJWTAuthentication",
 ]

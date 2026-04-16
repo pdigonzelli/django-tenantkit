@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+from typing import Any
+
 from django import forms
 from django.contrib import admin, messages
-from django.http import HttpResponseRedirect
+from django.contrib.admin.helpers import ACTION_CHECKBOX_NAME
+from django.http import HttpRequest, HttpResponseRedirect
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import path, reverse
 from django.utils.translation import gettext_lazy as _
@@ -15,12 +18,12 @@ from tenantkit.admin_base import (
 from tenantkit.admin_site import tenantkit_admin_site
 from tenantkit.crypto import encrypt_text
 from tenantkit.errors import MultitenantError
+from tenantkit.models import Tenant, TenantInvitation, TenantSetting
 from tenantkit.provisioning import (
     migrate_tenant,
     provision_and_migrate_tenant,
     provision_tenant,
 )
-from tenantkit.models import Tenant, TenantInvitation, TenantMembership, TenantSetting
 
 
 class TenantAdminForm(forms.ModelForm):
@@ -268,7 +271,7 @@ class TenantAdmin(SoftDeleteAdminMixin, SharedScopeModelAdmin):
             # No database tenants, use standard soft delete
             count = queryset.count()
             for tenant in queryset:
-                tenant.soft_delete(user=request.user)
+                tenant.soft_delete()
             self.message_user(
                 request, f"{count} tenant(s) deleted successfully.", messages.SUCCESS
             )
@@ -293,7 +296,7 @@ class TenantAdmin(SoftDeleteAdminMixin, SharedScopeModelAdmin):
 
             for tenant in database_tenants:
                 try:
-                    tenant.soft_delete(user=request.user, delete_database=True)
+                    tenant.soft_delete(delete_database=True)
                     deleted_count += 1
                 except Exception as exc:
                     self.message_user(
@@ -306,7 +309,7 @@ class TenantAdmin(SoftDeleteAdminMixin, SharedScopeModelAdmin):
             # Soft delete any non-database tenants
             other_tenants = queryset.exclude(id__in=[t.id for t in database_tenants])
             for tenant in other_tenants:
-                tenant.soft_delete(user=request.user)
+                tenant.soft_delete()
                 deleted_count += 1
 
             if deleted_count > 0:
@@ -326,7 +329,7 @@ class TenantAdmin(SoftDeleteAdminMixin, SharedScopeModelAdmin):
             "total_count": len(database_tenants),
             "expected_confirmation": f"DELETE {len(database_tenants)} TENANTS",
             "opts": self.opts,
-            "action_checkbox_name": admin.helpers.ACTION_CHECKBOX_NAME,
+            "action_checkbox_name": ACTION_CHECKBOX_NAME,
         }
         return render(request, "admin/tenantkit_tenant_bulk_delete.html", context)
 
@@ -433,7 +436,7 @@ class TenantAdmin(SoftDeleteAdminMixin, SharedScopeModelAdmin):
             return migrate_tenant(tenant)
         raise ValueError(f"Unknown operation: {operation}")
 
-    def delete_view(self, request, object_id, extra_context=None):
+    def delete_view(self, request: HttpRequest, object_id, extra_context=None) -> Any:
         """Override delete view to add double confirmation for database tenants."""
         tenant = self.get_object(request, object_id)
 
@@ -453,7 +456,7 @@ class TenantAdmin(SoftDeleteAdminMixin, SharedScopeModelAdmin):
         # For database tenants, show custom double confirmation
         if request.method == "POST":
             # Check for double confirmation
-            confirm_text = request.POST.get("confirm_delete_database", "").strip()
+            confirm_text = str(request.POST.get("confirm_delete_database", "")).strip()
             expected_text = f"DELETE {tenant.slug}"
 
             if confirm_text != expected_text:
@@ -478,7 +481,7 @@ class TenantAdmin(SoftDeleteAdminMixin, SharedScopeModelAdmin):
 
             # Second confirmation passed - proceed with delete including database
             try:
-                tenant.soft_delete(user=request.user, delete_database=True)
+                tenant.soft_delete(delete_database=True)
                 messages.success(
                     request, _("Tenant and database deleted successfully.")
                 )
@@ -515,13 +518,6 @@ class TenantAdmin(SoftDeleteAdminMixin, SharedScopeModelAdmin):
         )
 
 
-class TenantMembershipAdmin(SoftDeleteAdminMixin, SharedScopeModelAdmin):
-    list_display = ("tenant", "user", "role", "is_active", "deleted_at")
-    list_filter = ("role", "is_active") + SoftDeleteAdminMixin.list_filter
-    search_fields = ("tenant__slug", "tenant__name", "user__username", "user__email")
-    actions = SoftDeleteAdminMixin.actions
-
-
 class TenantInvitationAdmin(SoftDeleteAdminMixin, SharedScopeModelAdmin):
     list_display = ("tenant", "email", "status", "expires_at", "deleted_at")
     list_filter = ("status",) + SoftDeleteAdminMixin.list_filter
@@ -537,6 +533,5 @@ class TenantSettingAdmin(SoftDeleteAdminMixin, SharedScopeModelAdmin):
 
 
 tenantkit_admin_site.register(Tenant, TenantAdmin)
-tenantkit_admin_site.register(TenantMembership, TenantMembershipAdmin)
 tenantkit_admin_site.register(TenantInvitation, TenantInvitationAdmin)
 tenantkit_admin_site.register(TenantSetting, TenantSettingAdmin)

@@ -7,7 +7,6 @@ import subprocess
 from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
 
-
 _OPENSSL_ARGS_ENCRYPT = [
     "enc",
     "-aes-256-cbc",
@@ -55,8 +54,7 @@ def _openssl(command: list[str], payload: str) -> str:
     result = subprocess.run(
         ["openssl", *command, "-pass", "env:TENANT_ENCRYPTION_KEY"],
         input=payload,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        capture_output=True,
         text=True,
         env=env,
         check=False,
