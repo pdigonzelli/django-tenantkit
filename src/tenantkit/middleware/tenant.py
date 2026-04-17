@@ -10,6 +10,7 @@ from tenantkit.admin_site import (
     SESSION_ACTIVE_TENANT_ID,
     SESSION_AUTH_SCOPE,
 )
+from tenantkit.bootstrap import register_database_tenant_connection
 from tenantkit.core.context import (
     clear_current_strategy,
     clear_current_tenant,
@@ -89,6 +90,7 @@ class TenantMiddleware(MiddlewareMixin):
             return SchemaStrategy()
 
         if tenant.isolation_mode == Tenant.IsolationMode.DATABASE:
+            register_database_tenant_connection(tenant)
             return DatabaseStrategy()
 
         return None

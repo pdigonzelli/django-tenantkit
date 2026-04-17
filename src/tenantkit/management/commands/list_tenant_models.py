@@ -17,7 +17,11 @@ from typing import Any
 from django.apps import apps
 from django.core.management.base import BaseCommand, CommandParser
 
-from tenantkit.model_config import ModelRegistry
+from tenantkit.classification import get_model_scope, is_framework_app
+from tenantkit.model_config import (
+    MODEL_TYPE_UNCLASSIFIED,
+    ModelRegistry,
+)
 
 
 class Command(BaseCommand):
@@ -26,7 +30,7 @@ class Command(BaseCommand):
     def add_arguments(self, parser: CommandParser) -> None:
         parser.add_argument(
             "--type",
-            choices=["shared", "tenant", "unclassified", "all"],
+            choices=["shared", "tenant", "both", "unclassified", "all"],
             default="all",
             help="Filter models by type (default: all)",
         )
@@ -73,43 +77,26 @@ class Command(BaseCommand):
         data: dict[str, list[dict[str, Any]]] = {
             "shared": [],
             "tenant": [],
+            "both": [],
             "unclassified": [],
         }
 
-        # Get registered models
-        if model_type in ("shared", "all"):
-            for config in ModelRegistry.get_shared_models():
-                if app_label and config["app_label"] != app_label:
-                    continue
-                data["shared"].append(self._model_config_to_dict(config))
+        for model in apps.get_models():
+            if app_label and model._meta.app_label != app_label:
+                continue
 
-        if model_type in ("tenant", "all"):
-            for config in ModelRegistry.get_tenant_models():
-                if app_label and config["app_label"] != app_label:
-                    continue
-                data["tenant"].append(self._model_config_to_dict(config))
+            scope = get_model_scope(model)
+            if scope == MODEL_TYPE_UNCLASSIFIED and is_framework_app(
+                model._meta.app_label
+            ):
+                continue
+            if scope == MODEL_TYPE_UNCLASSIFIED and not include_unregistered:
+                continue
 
-        # Include unregistered models if requested
-        if include_unregistered and model_type in ("unclassified", "all"):
-            registered_models = set()
-            for config in ModelRegistry.get_all_models():
-                registered_models.add(config["full_name"])
+            if model_type not in (scope, "all"):
+                continue
 
-            for model in apps.get_models():
-                full_name = f"{model.__module__}.{model.__name__}"
-                if full_name not in registered_models:
-                    if app_label and model._meta.app_label != app_label:
-                        continue
-                    data["unclassified"].append(
-                        {
-                            "full_name": full_name,
-                            "app_label": model._meta.app_label,
-                            "model_name": model._meta.model_name,
-                            "table_name": model._meta.db_table,
-                            "auto_migrate": None,
-                            "allow_global_queries": None,
-                        }
-                    )
+            data[scope].append(self._model_to_dict(model, scope))
 
         return data
 
@@ -124,6 +111,23 @@ class Command(BaseCommand):
             "allow_global_queries": config.get("allow_global_queries", False),
         }
 
+    def _model_to_dict(self, model: type, scope: str) -> dict[str, Any]:
+        config = ModelRegistry.get_model_config(model)
+        if config:
+            data = self._model_config_to_dict(config)
+        else:
+            data = {
+                "full_name": f"{model.__module__}.{model.__name__}",
+                "app_label": model._meta.app_label,
+                "model_name": model._meta.model_name,
+                "table_name": model._meta.db_table,
+                "auto_migrate": None,
+                "allow_global_queries": None,
+            }
+
+        data["scope"] = scope
+        return data
+
     def _output_json(self, data: dict[str, list[dict[str, Any]]]) -> None:
         """Output as JSON."""
         self.stdout.write(json.dumps(data, indent=2))
@@ -132,6 +136,7 @@ class Command(BaseCommand):
         """Output as formatted table."""
         total_shared = len(data["shared"])
         total_tenant = len(data["tenant"])
+        total_both = len(data["both"])
         total_unclassified = len(data["unclassified"])
 
         # Header
@@ -144,10 +149,11 @@ class Command(BaseCommand):
         self.stdout.write(self.style.MIGRATE_LABEL("Summary:"))
         self.stdout.write(f"  Shared models:      {total_shared}")
         self.stdout.write(f"  Tenant models:      {total_tenant}")
+        self.stdout.write(f"  Both-scope models:  {total_both}")
         if total_unclassified > 0:
             self.stdout.write(f"  Unclassified:       {total_unclassified}")
         self.stdout.write(
-            f"  Total:              {total_shared + total_tenant + total_unclassified}"
+            f"  Total:              {total_shared + total_tenant + total_both + total_unclassified}"
         )
         self.stdout.write()
 
@@ -167,6 +173,16 @@ class Command(BaseCommand):
             self.stdout.write(self.style.WARNING("─" * 80))
             for model in data["tenant"]:
                 self._print_model_line(model, "tenant")
+            self.stdout.write()
+
+        if data["both"]:
+            self.stdout.write(self.style.MIGRATE_HEADING("─" * 80))
+            self.stdout.write(
+                self.style.MIGRATE_HEADING(f"🔁 BOTH-SCOPE MODELS ({total_both})")
+            )
+            self.stdout.write(self.style.MIGRATE_HEADING("─" * 80))
+            for model in data["both"]:
+                self._print_model_line(model, "both")
             self.stdout.write()
 
         # Unclassified models
@@ -214,6 +230,8 @@ class Command(BaseCommand):
 
             if model_type == "tenant" and model.get("allow_global_queries"):
                 flags.append("global")
+            if model_type == "both":
+                flags.append("both")
 
         flags_str = f" [{', '.join(flags)}]" if flags else ""
 
@@ -222,6 +240,8 @@ class Command(BaseCommand):
             prefix = "  📄"
         elif model_type == "tenant":
             prefix = "  🏢"
+        elif model_type == "both":
+            prefix = "  🔁"
         else:
             prefix = "  ❓"
 

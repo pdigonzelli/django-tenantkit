@@ -15,8 +15,14 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from tenantkit.classification import (
+    MODEL_TYPE_BOTH,
+    get_app_scope,
+    get_both_app_labels,
+    get_model_scope,
+)
 from tenantkit.core.context import get_current_strategy, get_current_tenant
-from tenantkit.model_config import ModelRegistry
+from tenantkit.model_config import MODEL_TYPE_SHARED, MODEL_TYPE_TENANT, ModelRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -46,23 +52,15 @@ class TenantRouter:
 
     def _is_shared_model(self, model: Any) -> bool:
         """Check if a model is registered as shared."""
-        return ModelRegistry.is_shared_model(model)
+        return get_model_scope(model) == MODEL_TYPE_SHARED
 
     def _is_tenant_model(self, model: Any) -> bool:
         """Check if a model is registered as tenant."""
-        return ModelRegistry.is_tenant_model(model)
+        return get_model_scope(model) == MODEL_TYPE_TENANT
 
-    def _get_dual_app_labels(self) -> set[str]:
-        """Return the set of app labels configured as dual (shared + tenant)."""
-        from django.conf import settings
-
-        dual_apps: list[str] = getattr(settings, "TENANTKIT_DUAL_APPS", [])
-        # Convert dotted app names to app_labels
-        labels: set[str] = set()
-        for app in dual_apps:
-            # "django.contrib.auth" → "auth", "django.contrib.contenttypes" → "contenttypes"
-            labels.add(app.rsplit(".", 1)[-1])
-        return labels
+    def _is_dual_app_model(self, model: Any) -> bool:
+        """Check if model belongs to an app configured as both-scoped."""
+        return get_model_scope(model) == MODEL_TYPE_BOTH
 
     def db_for_read(self, model: Any, **hints: Any) -> str | None:
         """
@@ -79,6 +77,25 @@ class TenantRouter:
         if self._is_shared_model(model):
             logger.debug(f"Routing read for shared model {model.__name__} to default")
             return "default"
+
+        # Dual-app models (e.g. auth/contenttypes) use default without tenant,
+        # or the active tenant strategy when tenant context is present.
+        if self._is_dual_app_model(model):
+            tenant = self._get_tenant(hints)
+            clean_hints = dict(hints)
+            clean_hints.pop("tenant", None)
+
+            if tenant is None:
+                return "default"
+
+            strategy = self._get_strategy()
+            if strategy is None:
+                return "default"
+
+            return strategy.db_for_read(model, tenant=tenant, **clean_hints)
+
+        if not self._is_tenant_model(model):
+            return None
 
         # For tenant models, we need a tenant context
         tenant = self._get_tenant(hints)
@@ -125,6 +142,23 @@ class TenantRouter:
         if self._is_shared_model(model):
             logger.debug(f"Routing write for shared model {model.__name__} to default")
             return "default"
+
+        if self._is_dual_app_model(model):
+            tenant = self._get_tenant(hints)
+            clean_hints = dict(hints)
+            clean_hints.pop("tenant", None)
+
+            if tenant is None:
+                return "default"
+
+            strategy = self._get_strategy()
+            if strategy is None:
+                return "default"
+
+            return strategy.db_for_write(model, tenant=tenant, **clean_hints)
+
+        if not self._is_tenant_model(model):
+            return None
 
         # For tenant models, we need a tenant context
         tenant = self._get_tenant(hints)
@@ -216,9 +250,14 @@ class TenantRouter:
             True if migration is allowed, False if not, None to defer
         """
         # 1. Check dual apps first — they migrate everywhere
-        dual_labels = self._get_dual_app_labels()
-        if app_label in dual_labels:
+        if app_label in get_both_app_labels():
             return True
+
+        app_scope = get_app_scope(app_label)
+        if app_scope == MODEL_TYPE_SHARED:
+            return db == "default"
+        if app_scope == MODEL_TYPE_TENANT:
+            return db != "default"
 
         # 2. Try to resolve the model for registry-based routing
         model = None
@@ -231,20 +270,21 @@ class TenantRouter:
                 pass
 
         if model:
-            # Check model registry
-            is_shared = self._is_shared_model(model)
-            is_tenant = self._is_tenant_model(model)
+            scope = get_model_scope(model)
 
-            if is_shared:
+            if scope == MODEL_TYPE_SHARED:
                 # Shared models only migrate on default database
                 return db == "default"
 
-            if is_tenant:
+            if scope == MODEL_TYPE_TENANT:
                 # Tenant models don't migrate on default (they migrate on tenant DBs)
                 if db == "default":
                     return False
                 # Allow on tenant databases
                 return None
+
+            if scope == MODEL_TYPE_BOTH:
+                return True
 
         # 3. Unclassified models → default only
         return db == "default"

@@ -7,16 +7,5 @@
 <div style="margin-top: 4px; font-size: 12px; opacity: .9; display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
   <strong>{{ tenant_scope_label }}</strong>
   {% if current_tenant_label %}<span>({{ current_tenant_label }})</span>{% endif %}
-  <form method="post" action="{{ tenant_switch_url }}" style="display:flex; gap:8px; align-items:center; margin:0;">
-    {% csrf_token %}
-    <label for="admin-tenant-switch" class="visually-hidden">Tenant</label>
-    <select id="admin-tenant-switch" name="tenant" onchange="this.form.submit()">
-      <option value="">Default / Global</option>
-      {% for tenant in available_tenants %}
-        <option value="{{ tenant.pk }}" {% if current_tenant and tenant.pk == current_tenant.pk %}selected{% endif %}>{{ tenant.name }} ({{ tenant.slug }})</option>
-      {% endfor %}
-    </select>
-  </form>
-  <a href="{{ tenant_switch_url }}">Open switcher</a>
 </div>
 {% endblock %}

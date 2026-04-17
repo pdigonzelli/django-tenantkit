@@ -11,14 +11,32 @@ from django.core.management import call_command
 from django.db import connections
 
 from tenantkit.backends.postgresql.base import activate_schema, deactivate_schema
+from tenantkit.classification import get_both_app_labels, get_tenant_app_labels
 from tenantkit.connections import parse_connection_url
 from tenantkit.errors import SchemaProvisioningUnsupportedError
+from tenantkit.model_config import ModelRegistry
 
 if TYPE_CHECKING:
     from tenantkit.models import Tenant
 
 
 logger = logging.getLogger(__name__)
+
+
+def _get_schema_migration_app_labels() -> list[str]:
+    app_labels = set(get_both_app_labels()) | set(get_tenant_app_labels())
+    app_labels.update(
+        config["app_label"] for config in ModelRegistry.get_tenant_models()
+    )
+
+    ordered = []
+    for preferred in ("contenttypes", "auth"):
+        if preferred in app_labels:
+            ordered.append(preferred)
+            app_labels.remove(preferred)
+
+    ordered.extend(sorted(app_labels))
+    return ordered
 
 
 class DatabaseProvisioningStrategy(ABC):
@@ -628,7 +646,9 @@ def grant_database_permissions(
         raise RuntimeError(f"Failed to grant permissions: {exc}") from exc
 
 
-def database_exists(connection_string: str, provisioning_connection_string: str) -> bool:
+def database_exists(
+    connection_string: str, provisioning_connection_string: str
+) -> bool:
     """Check if database exists using psycopg."""
     try:
         import psycopg
@@ -672,7 +692,8 @@ def ensure_database_exists(
     target = _parse_postgres_url(provisioning_connection_string)
     if target is None:
         logger.info(
-            "tenant.db.provisioning.skipped", extra={"connection_string": connection_string}
+            "tenant.db.provisioning.skipped",
+            extra={"connection_string": connection_string},
         )
         return False
 
@@ -788,9 +809,17 @@ def migrate_schema_tenant(tenant: Tenant) -> bool:
     if connections["default"].vendor != "postgresql":
         raise SchemaProvisioningUnsupportedError()
 
-    activate_schema(schema_name)
+    activate_schema(schema_name, include_public=False)
     try:
-        call_command("migrate", database="default", interactive=False, verbosity=0)
+        app_labels = _get_schema_migration_app_labels()
+        for app_label in app_labels:
+            call_command(
+                "migrate",
+                app_label,
+                database="default",
+                interactive=False,
+                verbosity=0,
+            )
     finally:
         deactivate_schema()
     logger.info(
@@ -810,36 +839,7 @@ def migrate_database_tenant(tenant: Any) -> int:
 
 def provision_tenant(tenant: Tenant) -> bool:
     if tenant.isolation_mode == tenant.IsolationMode.DATABASE:
-        connection_string = tenant.get_connection_string()
-        if not connection_string:
-            return False
-
-        # For SQLite, just ensure directory exists
-        if connection_string.startswith("sqlite"):
-            database_config = parse_connection_url(connection_string)
-            database_name = str(database_config.get("NAME") or "").strip()
-            if database_name and database_name != ":memory:":
-                import os
-
-                db_dir = os.path.dirname(database_name)
-                if db_dir and not os.path.exists(db_dir):
-                    os.makedirs(db_dir, exist_ok=True)
-            logger.info(
-                "tenant.sqlite.provisioned",
-                extra={"tenant": tenant.slug, "database": database_name},
-            )
-        else:
-            # For PostgreSQL/MySQL/etc
-            provisioning_connection_string = (
-                tenant.get_provisioning_connection_string() or connection_string
-            )
-            if not provisioning_connection_string:
-                return False
-            ensure_database_exists(connection_string, provisioning_connection_string)
-
-        from tenantkit.bootstrap import register_database_tenant_connection
-
-        return register_database_tenant_connection(tenant)
+        return ensure_database_tenant_ready(tenant)
 
     if tenant.isolation_mode == tenant.IsolationMode.SCHEMA:
         return ensure_schema_exists(str(tenant.schema_name or ""))

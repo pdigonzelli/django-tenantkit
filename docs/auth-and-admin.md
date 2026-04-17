@@ -45,20 +45,80 @@ Responsabilidades:
 - operación diaria sobre datos tenant-locales
 - gestión interna del espacio del tenant
 
-## DUAL_APPS
+## Configuración de Apps para Multi-Tenancy
 
-Para que los modelos de autenticación existan tanto en la base default como en las bases/schemas tenant, tenantkit soporta `TENANTKIT_DUAL_APPS`.
+TenantKit usa un sistema de **clasificación por apps** para determinar dónde residen los modelos.
 
-Configuración recomendada:
+### Apps de Ambos Alcances (BOTH_APPS)
+
+Para que los modelos de autenticación existan tanto en la base default como en las bases/schemas tenant:
 
 ```python
-TENANTKIT_DUAL_APPS = [
+TENANTKIT_BOTH_APPS = [
     "django.contrib.auth",
     "django.contrib.contenttypes",
 ]
 ```
 
 Esto permite que `auth_user` y sus dependencias se migren en todos los contextos necesarios.
+
+**Nota:** La configuración anterior `TENANTKIT_DUAL_APPS` está deprecada. Usa `TENANTKIT_BOTH_APPS` en su lugar.
+
+### Sistema de Clasificación
+
+TenantKit soporta cuatro niveles de clasificación:
+
+1. **BOTH_APPS** – Apps que existen en ambos contextos (shared y tenant)
+2. **SHARED_APPS** – Apps que solo existen en la base compartida
+3. **TENANT_APPS** – Apps que solo existen en contextos tenant
+4. **MIXED_APPS** – Configuración fina por modelo dentro de una app
+
+Ejemplo completo:
+
+```python
+# Apps que existen en AMBOS contextos
+TENANTKIT_BOTH_APPS = [
+    "django.contrib.auth",
+    "django.contrib.contenttypes",
+]
+
+# Apps que solo existen en shared/default
+TENANTKIT_SHARED_APPS = [
+    "tenantkit",  # framework
+    "myapp.global",  # configuración global
+]
+
+# Apps que solo existen en tenant
+TENANTKIT_TENANT_APPS = [
+    "myapp.sensors",  # datos de sensores por tenant
+    "myapp.billing",  # facturación por tenant
+]
+
+# Control fino por modelo (opcional)
+TENANTKIT_MIXED_APPS = {
+    "myapp.core": {
+        "shared_models": ["GlobalConfig"],
+        "tenant_models": ["TenantSetting"],
+    }
+}
+```
+
+### Precedencia
+
+Cuando hay conflictos, se aplica esta precedencia (de mayor a menor):
+
+1. Decoradores de modelo (`@shared_model`, `@tenant_model`)
+2. Configuración `TENANTKIT_MIXED_APPS`
+3. Configuración `TENANTKIT_BOTH_APPS`
+4. Configuración `TENANTKIT_SHARED_APPS` / `TENANTKIT_TENANT_APPS`
+5. Por defecto: deferir a Django
+
+Verifica tu configuración con:
+
+```bash
+python manage.py list_tenant_models
+python manage.py check
+```
 
 ## Login en `/admin/`
 

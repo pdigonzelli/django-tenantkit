@@ -1,0 +1,34 @@
+{% extends "admin/base_site.html" %}
+
+{% block content %}
+<div class="module">
+  <h1>Bootstrap tenant admin</h1>
+  <p>Tenant: <strong>{{ tenant.name }}</strong> ({{ tenant.slug }})</p>
+  <form method="post">
+    {% csrf_token %}
+    {{ form.non_field_errors }}
+    <fieldset class="module aligned">
+      <div class="form-row">
+        {{ form.username.errors }}
+        {{ form.username.label_tag }} {{ form.username }}
+      </div>
+      <div class="form-row">
+        {{ form.email.errors }}
+        {{ form.email.label_tag }} {{ form.email }}
+      </div>
+      <div class="form-row">
+        {{ form.password1.errors }}
+        {{ form.password1.label_tag }} {{ form.password1 }}
+      </div>
+      <div class="form-row">
+        {{ form.password2.errors }}
+        {{ form.password2.label_tag }} {{ form.password2 }}
+      </div>
+    </fieldset>
+    <div class="submit-row">
+      <input type="submit" value="Create tenant admin" class="default">
+      <a href="{% url 'admin:tenantkit_tenant_change' tenant.pk %}" class="button cancel-link">Cancel</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

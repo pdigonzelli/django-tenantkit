@@ -6,6 +6,7 @@
   {{ block.super }}
   {% if original %}
     {% with urls=tenant_operation_urls %}
+      <li><a href="{{ urls.bootstrap_admin }}" class="historylink">Bootstrap tenant admin</a></li>
       <li><a href="{{ urls.provision_and_migrate }}" class="historylink">Provision &amp; Migrate</a></li>
       <li><a href="{{ urls.provision_only }}" class="historylink">Provision only</a></li>
       <li><a href="{{ urls.migrate_only }}" class="historylink">Migrate only</a></li>

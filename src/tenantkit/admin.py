@@ -1,21 +1,34 @@
 from __future__ import annotations
 
 from typing import Any
+from urllib.parse import urlparse
 
 from django import forms
 from django.contrib import admin, messages
 from django.contrib.admin.helpers import ACTION_CHECKBOX_NAME
+from django.contrib.auth import get_user_model
+from django.contrib.auth.admin import GroupAdmin as DjangoGroupAdmin
+from django.contrib.auth.admin import UserAdmin as DjangoUserAdmin
+from django.contrib.auth.models import Group
 from django.http import HttpRequest, HttpResponseRedirect
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import path, reverse
 from django.utils.translation import gettext_lazy as _
 
 from tenantkit.admin_base import (
+    ScopedModelAdminMixin,
     SharedScopeModelAdmin,
     SoftDeleteAdminMixin,
     SoftDeleteStatusFilter,
 )
 from tenantkit.admin_site import tenantkit_admin_site
+from tenantkit.bootstrap import register_database_tenant_connection
+from tenantkit.core.context import (
+    clear_current_strategy,
+    clear_current_tenant,
+    set_current_strategy,
+    set_current_tenant,
+)
 from tenantkit.crypto import encrypt_text
 from tenantkit.errors import MultitenantError
 from tenantkit.models import Tenant, TenantInvitation, TenantSetting
@@ -24,6 +37,8 @@ from tenantkit.provisioning import (
     provision_and_migrate_tenant,
     provision_tenant,
 )
+from tenantkit.strategies.database.strategy import DatabaseStrategy
+from tenantkit.strategies.schema.strategy import SchemaStrategy
 
 
 class TenantAdminForm(forms.ModelForm):
@@ -166,6 +181,32 @@ class TenantAdminForm(forms.ModelForm):
             instance.save()
             self.save_m2m()
         return instance
+
+
+class BootstrapTenantAdminForm(forms.Form):
+    username = forms.CharField(max_length=150)
+    email = forms.EmailField()
+    password1 = forms.CharField(widget=forms.PasswordInput)
+    password2 = forms.CharField(widget=forms.PasswordInput)
+
+    def __init__(self, *args, tenant: Tenant, **kwargs):
+        self.tenant = tenant
+        super().__init__(*args, **kwargs)
+        self.fields["username"].initial = self._suggest_username()
+
+    def _suggest_username(self) -> str:
+        if self.tenant.isolation_mode == Tenant.IsolationMode.DATABASE:
+            connection_string = self.tenant.get_connection_string() or ""
+            parsed = urlparse(connection_string)
+            if parsed.username:
+                return parsed.username
+        return "admin"
+
+    def clean(self):
+        cleaned_data = super().clean()
+        if cleaned_data.get("password1") != cleaned_data.get("password2"):
+            raise forms.ValidationError(_("Passwords do not match."))
+        return cleaned_data
 
 
 class TenantAdmin(SoftDeleteAdminMixin, SharedScopeModelAdmin):
@@ -352,6 +393,11 @@ class TenantAdmin(SoftDeleteAdminMixin, SharedScopeModelAdmin):
         urls = super().get_urls()
         custom_urls = [
             path(
+                "<path:object_id>/ops/bootstrap_admin/",
+                self.admin_site.admin_view(self.bootstrap_tenant_admin_view),
+                name="tenant_bootstrap_admin",
+            ),
+            path(
                 "<path:object_id>/ops/<str:operation>/",
                 self.admin_site.admin_view(self.tenant_operation_view),
                 name="tenant_operation",
@@ -372,6 +418,9 @@ class TenantAdmin(SoftDeleteAdminMixin, SharedScopeModelAdmin):
         context["tenant_operation_urls"] = {}
         if obj is not None:
             context["tenant_operation_urls"] = {
+                "bootstrap_admin": reverse(
+                    "admin:tenant_bootstrap_admin", args=[obj.pk]
+                ),
                 "provision_and_migrate": self.get_operation_url(
                     obj, "provision_migrate"
                 ),
@@ -379,6 +428,79 @@ class TenantAdmin(SoftDeleteAdminMixin, SharedScopeModelAdmin):
                 "migrate_only": self.get_operation_url(obj, "migrate_only"),
             }
         return super().render_change_form(request, context, add, change, form_url, obj)
+
+    def bootstrap_tenant_admin_view(self, request, object_id: str):
+        tenant = get_object_or_404(Tenant, pk=object_id)
+
+        if request.method == "POST":
+            form = BootstrapTenantAdminForm(request.POST, tenant=tenant)
+            if form.is_valid():
+                try:
+                    self._create_tenant_admin(tenant, form.cleaned_data)
+                    messages.success(
+                        request,
+                        f"Tenant admin '{form.cleaned_data['username']}' created successfully.",
+                        fail_silently=True,
+                    )
+                    return redirect(
+                        reverse(
+                            f"admin:{self.opts.app_label}_{self.opts.model_name}_change",
+                            args=[tenant.pk],
+                        )
+                    )
+                except Exception as exc:
+                    messages.error(
+                        request,
+                        f"Bootstrap tenant admin failed: {exc}",
+                        fail_silently=True,
+                    )
+        else:
+            form = BootstrapTenantAdminForm(tenant=tenant)
+
+        return render(
+            request,
+            "admin/tenantkit_bootstrap_admin.html",
+            {
+                **self.admin_site.each_context(request),
+                "title": f"Bootstrap tenant admin - {tenant.name}",
+                "tenant": tenant,
+                "form": form,
+                "opts": self.opts,
+            },
+        )
+
+    def _create_tenant_admin(
+        self, tenant: Tenant, cleaned_data: dict[str, Any]
+    ) -> None:
+        strategy = None
+        if tenant.isolation_mode == Tenant.IsolationMode.SCHEMA:
+            strategy = SchemaStrategy()
+        elif tenant.isolation_mode == Tenant.IsolationMode.DATABASE:
+            register_database_tenant_connection(tenant)
+            strategy = DatabaseStrategy()
+
+        if strategy is None:
+            raise ValueError("Unsupported tenant isolation mode.")
+
+        try:
+            set_current_tenant(tenant)
+            set_current_strategy(strategy)
+            strategy.activate(tenant)
+
+            user_model = get_user_model()
+            user, _ = user_model.objects.get_or_create(
+                username=str(cleaned_data["username"])
+            )
+            user.email = str(cleaned_data["email"])
+            user.is_staff = True
+            user.is_superuser = True
+            user.is_active = True
+            user.set_password(str(cleaned_data["password1"]))
+            user.save()
+        finally:
+            strategy.deactivate()
+            clear_current_strategy()
+            clear_current_tenant()
 
     def tenant_operation_view(self, request, object_id: str, operation: str):
         tenant = get_object_or_404(Tenant, pk=object_id)
@@ -532,6 +654,29 @@ class TenantSettingAdmin(SoftDeleteAdminMixin, SharedScopeModelAdmin):
     actions = SoftDeleteAdminMixin.actions
 
 
-tenantkit_admin_site.register(Tenant, TenantAdmin)
-tenantkit_admin_site.register(TenantInvitation, TenantInvitationAdmin)
-tenantkit_admin_site.register(TenantSetting, TenantSettingAdmin)
+class BothScopeUserAdmin(ScopedModelAdminMixin, DjangoUserAdmin):
+    multitenant_scope = "both"
+
+
+class BothScopeGroupAdmin(ScopedModelAdminMixin, DjangoGroupAdmin):
+    multitenant_scope = "both"
+
+
+def _safe_register(admin_site, model, admin_class) -> None:
+    if model not in admin_site._registry:
+        admin_site.register(model, admin_class)
+
+
+def _replace_registration(admin_site, model, admin_class) -> None:
+    if model in admin_site._registry:
+        admin_site.unregister(model)
+    admin_site.register(model, admin_class)
+
+
+sites = list({id(site): site for site in (admin.site, tenantkit_admin_site)}.values())
+for site in sites:
+    _safe_register(site, Tenant, TenantAdmin)
+    _safe_register(site, TenantInvitation, TenantInvitationAdmin)
+    _safe_register(site, TenantSetting, TenantSettingAdmin)
+    _replace_registration(site, get_user_model(), BothScopeUserAdmin)
+    _replace_registration(site, Group, BothScopeGroupAdmin)

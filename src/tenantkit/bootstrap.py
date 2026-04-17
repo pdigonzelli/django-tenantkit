@@ -46,10 +46,12 @@ def register_database_tenant_connections() -> int:
     """Register all database-tenant connections in Django's connection registry."""
 
     try:
-        tenants = Tenant.all_objects.filter(
-            isolation_mode=Tenant.IsolationMode.DATABASE,
-            is_active=True,
-            deleted_at__isnull=True,
+        tenants = list(
+            Tenant.all_objects.filter(
+                isolation_mode=Tenant.IsolationMode.DATABASE,
+                is_active=True,
+                deleted_at__isnull=True,
+            )
         )
     except (OperationalError, ProgrammingError):
         return 0

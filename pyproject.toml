@@ -65,9 +65,7 @@ tenantkit = [
 
 [tool.basedpyright]
 typeCheckingMode = "standard"
-diagnosticMode = "openFilesOnly"
 useLibraryCodeForTypes = true
-autoSearchPaths = true
 autoImportCompletions = true
 indexing = true
 exclude = [

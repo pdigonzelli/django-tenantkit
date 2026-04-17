@@ -10,7 +10,7 @@
     {% csrf_token %}
     <div class="submit-row">
       <input type="submit" value="Confirm" class="default">
-      <a href="{% url 'admin:multitenant_tenant_change' tenant.pk %}" class="button cancel-link">Cancel</a>
+      <a href="{% url 'admin:tenantkit_tenant_change' tenant.pk %}" class="button cancel-link">Cancel</a>
     </div>
   </form>
 </div>

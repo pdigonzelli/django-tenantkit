@@ -2,8 +2,9 @@ import json
 from typing import Any, cast
 from unittest.mock import MagicMock, patch
 
+from django.contrib import admin
 from django.contrib.auth import get_user_model
-from django.contrib.auth.models import AnonymousUser
+from django.contrib.auth.models import AnonymousUser, Group
 from django.contrib.sessions.backends.db import SessionStore
 from django.core.exceptions import ImproperlyConfigured, ValidationError
 from django.db import connection, connections, models
@@ -16,13 +17,19 @@ from django.test import (
 )
 from rest_framework.exceptions import AuthenticationFailed
 
-from tenantkit.admin import TenantAdmin, TenantAdminForm
+from tenantkit.admin import (
+    BothScopeGroupAdmin,
+    BothScopeUserAdmin,
+    TenantAdmin,
+    TenantAdminForm,
+)
 from tenantkit.admin_base import TenantSharedModelAdmin
 from tenantkit.admin_site import (
     AUTH_SCOPE_GLOBAL,
     AUTH_SCOPE_TENANT,
     SESSION_ACTIVE_TENANT_ID,
     SESSION_AUTH_SCOPE,
+    TenantAdminAuthenticationForm,
     tenantkit_admin_site,
 )
 from tenantkit.auth import (
@@ -33,6 +40,13 @@ from tenantkit.auth import (
 from tenantkit.bootstrap import (
     register_database_tenant_connection,
     unregister_database_tenant_connection,
+)
+from tenantkit.classification import (
+    MODEL_TYPE_BOTH,
+    clear_classification_caches,
+    get_app_scope,
+    get_both_app_labels,
+    get_model_scope,
 )
 from tenantkit.connections import parse_connection_url
 from tenantkit.core.context import (
@@ -51,7 +65,7 @@ from tenantkit.model_config import (
     get_models_for_migration,
     tenant_model,
 )
-from tenantkit.models import Tenant, TenantSharedModel
+from tenantkit.models import Tenant, TenantInvitation, TenantSetting, TenantSharedModel
 from tenantkit.provisioning import (
     ensure_database_exists,
     ensure_database_tenant_ready,
@@ -437,6 +451,7 @@ class TenantRouterTests(TestCase):
     def tearDown(self):
         clear_current_tenant()
         clear_current_strategy()
+        clear_classification_caches()
 
     def test_router_returns_none_without_tenant(self):
         router = TenantRouter()
@@ -470,6 +485,89 @@ class TenantRouterTests(TestCase):
         router = TenantRouter()
 
         self.assertEqual(router.db_for_read(DummyGlobalTenantRecord), "default")
+
+    def test_router_routes_dual_app_models_to_default_without_tenant(self):
+        router = TenantRouter()
+
+        self.assertEqual(router.db_for_read(User), "default")
+        self.assertEqual(router.db_for_write(User), "default")
+
+    def test_router_routes_dual_app_models_via_strategy_with_tenant(self):
+        tenant = Tenant(
+            slug="acme",
+            name="Acme",
+            isolation_mode=Tenant.IsolationMode.DATABASE,
+        )
+        strategy = self.DummyStrategy()
+        set_current_tenant(tenant)
+        set_current_strategy(strategy)
+
+        router = TenantRouter()
+
+        self.assertEqual(router.db_for_read(User), "tenant_db")
+        self.assertEqual(router.db_for_write(User), "tenant_db")
+
+        self.assertEqual(len(strategy.read_calls), 1)
+        self.assertEqual(strategy.read_calls[0][0], User)
+        self.assertEqual(len(strategy.write_calls), 1)
+        self.assertEqual(strategy.write_calls[0][0], User)
+
+    def test_router_defers_unclassified_models_without_warning(self):
+        class UnclassifiedModel(models.Model):
+            name = models.CharField(max_length=32)
+
+            class Meta:
+                app_label = "tenantkit"
+                managed = False
+
+            def __str__(self) -> str:
+                return str(self.name)
+
+        router = TenantRouter()
+
+        with self.assertNoLogs("tenantkit.routers.tenant", level="WARNING"):
+            self.assertIsNone(router.db_for_read(UnclassifiedModel))
+            self.assertIsNone(router.db_for_write(UnclassifiedModel))
+
+    @override_settings(
+        TENANTKIT_BOTH_APPS=["django.contrib.auth", "django.contrib.contenttypes"]
+    )
+    def test_classification_recognizes_both_apps(self):
+        clear_classification_caches()
+
+        self.assertIn("auth", get_both_app_labels())
+        self.assertEqual(get_model_scope(User), MODEL_TYPE_BOTH)
+
+    @override_settings(TENANTKIT_DUAL_APPS=["django.contrib.auth"])
+    def test_classification_supports_legacy_dual_apps(self):
+        clear_classification_caches()
+
+        with self.assertWarns(DeprecationWarning):
+            labels = get_both_app_labels()
+
+        self.assertIn("auth", labels)
+
+    @override_settings(TENANTKIT_TENANT_APPS=["tenantkit"])
+    def test_allow_migrate_uses_tenant_app_scope_without_model_name(self):
+        clear_classification_caches()
+        router = TenantRouter()
+
+        self.assertFalse(router.allow_migrate("default", "tenantkit"))
+        self.assertTrue(router.allow_migrate("tenant_db", "tenantkit"))
+
+    @override_settings(TENANTKIT_SHARED_APPS=["tenantkit"])
+    def test_allow_migrate_uses_shared_app_scope_without_model_name(self):
+        clear_classification_caches()
+        router = TenantRouter()
+
+        self.assertTrue(router.allow_migrate("default", "tenantkit"))
+        self.assertFalse(router.allow_migrate("tenant_db", "tenantkit"))
+
+    @override_settings(TENANTKIT_BOTH_APPS=["django.contrib.auth"])
+    def test_get_app_scope_recognizes_both_app(self):
+        clear_classification_caches()
+
+        self.assertEqual(get_app_scope("auth"), MODEL_TYPE_BOTH)
 
     def test_registry_tracks_concrete_tenant_model_configuration(self):
         self.assertTrue(ModelRegistry.is_tenant_model(DummyTenantRecord))
@@ -871,7 +969,7 @@ class TenantAdminSiteTests(TestCase):
         request.session = SessionStore()
         request.session[SESSION_AUTH_SCOPE] = AUTH_SCOPE_GLOBAL
 
-        response = tenantkit_admin_site.tenant_switch_view(request)
+        response = cast(Any, tenantkit_admin_site).tenant_switch_view(request)
 
         self.assertEqual(response.status_code, 302)
         self.assertEqual(request.session[SESSION_AUTH_SCOPE], AUTH_SCOPE_TENANT)
@@ -888,7 +986,7 @@ class TenantAdminSiteTests(TestCase):
         request.session[SESSION_AUTH_SCOPE] = AUTH_SCOPE_TENANT
         request.session[SESSION_ACTIVE_TENANT_ID] = str(self.tenant.pk)
 
-        response = tenantkit_admin_site.tenant_switch_view(request)
+        response = cast(Any, tenantkit_admin_site).tenant_switch_view(request)
 
         self.assertEqual(response.status_code, 302)
         self.assertEqual(request.session[SESSION_AUTH_SCOPE], AUTH_SCOPE_GLOBAL)
@@ -905,6 +1003,15 @@ class TenantAdminSiteTests(TestCase):
         self.assertEqual(context["current_tenant_label"], self.tenant.name)
         self.assertTrue(context["tenant_switch_url"])
         self.assertTrue(context["available_tenants"])
+
+    def test_framework_shared_models_are_registered_on_default_admin_site(self):
+        self.assertIn(Tenant, admin.site._registry)
+        self.assertIn(TenantInvitation, admin.site._registry)
+        self.assertIn(TenantSetting, admin.site._registry)
+
+    def test_user_and_group_are_registered_as_both_scope_admins(self):
+        self.assertIsInstance(admin.site._registry[User], BothScopeUserAdmin)
+        self.assertIsInstance(admin.site._registry[Group], BothScopeGroupAdmin)
 
     def test_admin_app_list_shows_shared_models_in_shared_scope(self):
         request = self._request()
@@ -957,6 +1064,72 @@ class TenantAdminSiteTests(TestCase):
 
         self.assertEqual(response.status_code, 302)
         op_mock.assert_called_once()
+
+    @patch("tenantkit.admin_site.get_user_model")
+    def test_tenant_login_form_rejects_global_fallback_when_user_missing_in_tenant(
+        self, mock_get_user_model
+    ):
+        request = self._request("post", "/admin/login/")
+        request.user = AnonymousUser()
+
+        mock_manager = MagicMock()
+        mock_manager.db_manager.return_value.get_by_natural_key.side_effect = (
+            User.DoesNotExist
+        )
+        mock_model = MagicMock()
+        mock_model._default_manager = mock_manager
+        mock_model.DoesNotExist = User.DoesNotExist
+        mock_get_user_model.return_value = mock_model
+
+        form = TenantAdminAuthenticationForm(
+            request=request,
+            data={
+                "username": "admin",
+                "password": "admin123",
+                "tenant": self.tenant.pk,
+            },
+        )
+
+        self.assertFalse(form.is_valid())
+        self.assertIn(
+            "Please enter the correct username and password for a staff account.",
+            form.non_field_errors()[0],
+        )
+
+    @patch("tenantkit.admin_site.get_user_model")
+    def test_tenant_login_form_authenticates_user_from_tenant_context(
+        self, mock_get_user_model
+    ):
+        request = self._request("post", "/admin/login/")
+        request.user = AnonymousUser()
+
+        tenant_user = MagicMock()
+        tenant_user.check_password.return_value = True
+        tenant_user.is_active = True
+        tenant_user.is_staff = True
+
+        mock_manager = MagicMock()
+        mock_manager.db_manager.return_value.get_by_natural_key.return_value = (
+            tenant_user
+        )
+        mock_model = MagicMock()
+        mock_model._default_manager = mock_manager
+        mock_model.DoesNotExist = User.DoesNotExist
+        mock_get_user_model.return_value = mock_model
+
+        form = TenantAdminAuthenticationForm(
+            request=request,
+            data={
+                "username": "tenant-admin",
+                "password": "secret",
+                "tenant": self.tenant.pk,
+            },
+        )
+
+        self.assertTrue(form.is_valid())
+        self.assertIs(form.get_user(), tenant_user)
+        assert form.tenant_obj is not None
+        self.assertEqual(form.tenant_obj.pk, self.tenant.pk)
 
 
 class _DummyTokenSerializer:

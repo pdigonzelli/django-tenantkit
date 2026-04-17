@@ -5,21 +5,30 @@ from django.db import migrations, models
 def copy_accepted_by_to_string(apps, schema_editor):
     TenantInvitation = apps.get_model("tenantkit", "TenantInvitation")
     UserModel = apps.get_model(*settings.AUTH_USER_MODEL.split("."))
+    db_alias = schema_editor.connection.alias
 
-    invitations = TenantInvitation.objects.exclude(accepted_by__isnull=True)
+    invitations = TenantInvitation.objects.using(db_alias).exclude(
+        accepted_by__isnull=True
+    )
     for invitation in invitations.iterator():
         accepted_by_id = invitation.accepted_by_id
         accepted_by_value = ""
 
         if accepted_by_id is not None:
-            user = UserModel.objects.filter(pk=accepted_by_id).only("username").first()
+            user = (
+                UserModel.objects.using(db_alias)
+                .filter(pk=accepted_by_id)
+                .only("username")
+                .first()
+            )
             if user is not None:
                 accepted_by_value = getattr(user, "username", "") or str(accepted_by_id)
             else:
                 accepted_by_value = str(accepted_by_id)
 
-        invitation.accepted_by_value = accepted_by_value
-        invitation.save(update_fields=["accepted_by_value"])
+        TenantInvitation.objects.using(db_alias).filter(pk=invitation.pk).update(
+            accepted_by_value=accepted_by_value
+        )
 
 
 class Migration(migrations.Migration):
