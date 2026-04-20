@@ -26,11 +26,15 @@ classifiers = [
 ]
 dependencies = [
     "django>=6.0.3",
+    "django-auditkit",
     "django-extensions>=4.1",
     "djangorestframework>=3.17.0",
     "drf-spectacular>=0.29.0",
     "psycopg[binary,pool]>=3.3.3",
 ]
+
+[tool.uv.sources]
+django-auditkit = { path = "/home/pdigonzelli/proyectos/django-auditkit", editable = true }
 
 [dependency-groups]
 dev = [

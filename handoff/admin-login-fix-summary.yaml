@@ -1,0 +1,63 @@
+schema_version: 1
+handoff:
+  project: django-multitenant (tenantkit)
+  task: Fix admin login for SCHEMA tenants
+  status: completed
+  date: "2026-04-20"
+  
+  changes:
+    - file: src/tenantkit/admin_site.py
+      type: bugfix
+      description: Fixed search_path restoration in TenantAdminAuthenticationForm.clean()
+      
+    - file: src/tenantkit/tests.py
+      type: test
+      description: Added comprehensive tests for SCHEMA tenant admin login
+      
+    - file: docs/setup-standard.md
+      type: documentation
+      description: Created standard setup guide with correct configuration order
+      
+    - file: docs/configuration-guide.md
+      type: documentation
+      description: Updated with correct INSTALLED_APPS and MIDDLEWARE order
+      
+    - file: docs/technical-admin-login-fix.md
+      type: documentation
+      description: Technical documentation of the fix
+      
+    - file: README.md
+      type: documentation
+      description: Added quick configuration section
+  
+  validation:
+    - test: Login with SCHEMA tenant selected
+      status: passed
+      result: Redirects correctly to admin index
+      
+    - test: Configuration validation
+      status: passed
+      project: sensorData
+      result: All checks passed
+      
+    - test: Regression test for DATABASE tenants
+      status: passed
+      result: DATABASE tenant login still works correctly
+  
+  risks: []
+  
+  next_steps: []
+  
+  documentation:
+    technical: docs/technical-admin-login-fix.md
+    setup: docs/setup-standard.md
+    configuration: docs/configuration-guide.md
+    summary_txt: handoff/admin-login-fix-summary.txt
+    
+  related_files:
+    - src/tenantkit/admin_site.py
+    - src/tenantkit/tests.py
+    - docs/setup-standard.md
+    - docs/configuration-guide.md
+    - docs/technical-admin-login-fix.md
+    - README.md

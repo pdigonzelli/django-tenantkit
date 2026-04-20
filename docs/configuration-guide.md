@@ -16,22 +16,37 @@ pip install django-tenantkit-core
 
 ## Configuración Básica
 
-### 1. Añadir a INSTALLED_APPS
+> **⚠️ IMPORTANTE:** Lee primero la [Guía de Configuración Estándar](./setup-standard.md) para entender el orden correcto de configuración.
+
+### 1. Añadir a INSTALLED_APPS - Orden CRÍTICO
+
+**El orden es fundamental:** `tenantkit` debe ir **DESPUÉS** de `django.contrib.auth`:
 
 ```python
 INSTALLED_APPS = [
-    # TenantKit primero para que sus modelos estén disponibles
-    "tenantkit",
+    # Django core PRIMERO
+    "django.contrib.admin",
+    "django.contrib.auth",          # ← Auth debe ir ANTES
+    "django.contrib.contenttypes",  # ← ContentTypes ANTES
+    "django.contrib.sessions",
+    "django.contrib.messages",
+    "django.contrib.staticfiles",
+    
+    # Third-party apps (opcional)
+    "rest_framework",
+    
+    # TenantKit DESPUÉS de auth
+    "tenantkit",                    # ← DESPUÉS de django.contrib.auth
     
     # Tus apps
-    ...
-    
-    # Django contrib
-    "django.contrib.admin",
-    "django.contrib.auth",
-    "django.contrib.contenttypes",
-    ...
+    "myapp",
 ]
+```
+
+**¿Por qué este orden?**
+- Los modelos de auth (User, Group, Permission) deben registrarse primero en el schema `public`
+- TenantKit extiende/modifica comportamiento de auth
+- Si `tenantkit` va primero, los modelos de auth no existen aún y pueden no registrarse correctamente
 ```
 
 ### 2. Configurar el Router
@@ -42,15 +57,31 @@ DATABASE_ROUTERS = [
 ]
 ```
 
-### 3. Configurar Middleware
+### 3. Configurar Middleware - Orden CRÍTICO
+
+**El orden es absolutamente crítico:** `TenantMiddleware` debe ir **DESPUÉS** de `AuthenticationMiddleware`:
 
 ```python
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
-    "tenantkit.middleware.TenantMiddleware",  # Después de SecurityMiddleware
     "django.contrib.sessions.middleware.SessionMiddleware",
-    ...
+    "django.middleware.common.CommonMiddleware",
+    "django.contrib.auth.middleware.AuthenticationMiddleware",  # ← ANTES
+    "tenantkit.middleware.TenantMiddleware",                    # ← DESPUÉS
+    "django.middleware.csrf.CsrfViewMiddleware",
+    "django.contrib.messages.middleware.MessageMiddleware",
 ]
+```
+
+**¿Por qué este orden?**
+1. `AuthenticationMiddleware` autentica al usuario consultando `auth_user` en el schema `public`
+2. `TenantMiddleware` cambia el `search_path` al schema del tenant
+3. Si el orden se invierte, auth busca usuarios en el schema del tenant (donde no existen)
+
+**Consecuencias de orden incorrecto:**
+- Login falla o autentica usuarios equivocados
+- Sesiones no funcionan correctamente
+- Permisos no se resuelven bien
 ```
 
 ### 4. Configurar Apps de Ambos Alcances

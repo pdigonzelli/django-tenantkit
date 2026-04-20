@@ -1,25 +1,14 @@
 from __future__ import annotations
 
+from auditkit.managers import SoftDeleteManager
+from auditkit.querysets import SoftDeleteQuerySet
 from django.db import models
 
 from tenantkit.core.context import get_current_tenant
 
-
-class AuditQuerySet(models.QuerySet):
-    def alive(self):
-        return self.filter(deleted_at__isnull=True)
-
-    def deleted(self):
-        return self.filter(deleted_at__isnull=False)
-
-
-class AuditManager(models.Manager.from_queryset(AuditQuerySet)):
-    def get_queryset(self):
-        return super().get_queryset().alive()
-
-
-class AllObjectsManager(models.Manager.from_queryset(AuditQuerySet)):
-    pass
+# Backward compatibility aliases
+AuditQuerySet = SoftDeleteQuerySet
+AuditManager = SoftDeleteManager
 
 
 class TenantSharedQuerySet(models.QuerySet):

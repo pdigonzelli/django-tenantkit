@@ -38,6 +38,22 @@ See [Concepts](https://github.com/pdigonzelli/django-tenantkit/blob/main/docs/co
 
 ---
 
+## Audit and soft-delete
+
+All framework models include **mandatory** audit tracking via [django-auditkit](https://github.com/pdigonzelli/django-auditkit):
+
+- `created_at`, `updated_at`, `deleted_at` — timestamps
+- `created_by`, `updated_by`, `deleted_by` — user tracking (foreign keys to `AUTH_USER_MODEL`)
+
+This provides:
+- **Soft delete** — records are marked deleted but retained for audit/history
+- **User attribution** — every change is traceable to a user
+- **Recovery** — soft-deleted records can be restored
+
+The framework models (`Tenant`, `TenantInvitation`, `TenantSetting`) all inherit from `AuditModel` and include these fields automatically. The admin interface shows audit information in a collapsed section at the bottom of each form.
+
+---
+
 ## Installation
 
 This repository uses a package-first layout.
@@ -64,6 +80,51 @@ At a high level, a Django project using the framework will:
 The current reference Django project lives in `example/`, while the package source lives in `src/tenantkit`.
 
 For the guided flow, see [Quickstart](https://github.com/pdigonzelli/django-tenantkit/blob/main/docs/quickstart.md).
+
+### Quick Configuration
+
+**Critical:** The order of `INSTALLED_APPS` and `MIDDLEWARE` matters. See [Setup Standard Guide](https://github.com/pdigonzelli/django-tenantkit/blob/main/docs/setup-standard.md) for full details.
+
+```python
+# settings.py - Minimal working configuration
+
+INSTALLED_APPS = [
+    # Django core FIRST (auth before tenantkit)
+    "django.contrib.admin",
+    "django.contrib.auth",
+    "django.contrib.contenttypes",
+    "django.contrib.sessions",
+    "django.contrib.messages",
+    "django.contrib.staticfiles",
+    
+    # TenantKit AFTER auth
+    "tenantkit",
+    
+    # Your apps
+    "myapp",
+]
+
+MIDDLEWARE = [
+    "django.middleware.security.SecurityMiddleware",
+    "django.contrib.sessions.middleware.SessionMiddleware",
+    "django.middleware.common.CommonMiddleware",
+    "django.contrib.auth.middleware.AuthenticationMiddleware",  # BEFORE
+    "tenantkit.middleware.TenantMiddleware",                  # AFTER
+    "django.middleware.csrf.CsrfViewMiddleware",
+    "django.contrib.messages.middleware.MessageMiddleware",
+]
+
+DATABASE_ROUTERS = ["tenantkit.routers.TenantRouter"]
+
+TENANTKIT_BOTH_APPS = [
+    "django.contrib.auth",
+    "django.contrib.contenttypes",
+]
+```
+
+**Why this order matters:**
+- `django.contrib.auth` must come **before** `tenantkit` so User/Group/Permission models register first in the `public` schema
+- `AuthenticationMiddleware` must come **before** `TenantMiddleware` so authentication happens in `public` before switching to the tenant schema
 
 ---
 
@@ -102,6 +163,8 @@ See [Example Project](https://github.com/pdigonzelli/django-tenantkit/blob/main/
 Public documentation:
 
 - [Installation](https://github.com/pdigonzelli/django-tenantkit/blob/main/docs/installation.md)
+- [Setup Standard Guide](https://github.com/pdigonzelli/django-tenantkit/blob/main/docs/setup-standard.md) - **Start here for configuration order**
+- [Configuration Guide](https://github.com/pdigonzelli/django-tenantkit/blob/main/docs/configuration-guide.md)
 - [Quickstart](https://github.com/pdigonzelli/django-tenantkit/blob/main/docs/quickstart.md)
 - [Concepts](https://github.com/pdigonzelli/django-tenantkit/blob/main/docs/concepts.md)
 - [Commands](https://github.com/pdigonzelli/django-tenantkit/blob/main/docs/commands.md)

@@ -148,7 +148,9 @@ class ScopedModelAdminMixin:
         return super().has_view_or_change_permission(request, obj=obj)  # type: ignore[attr-defined]
 
 
-class TenantAwareModelAdmin(TenantAwareAdminMixin, admin.ModelAdmin):
+class TenantAwareModelAdmin(
+    ScopedModelAdminMixin, TenantAwareAdminMixin, admin.ModelAdmin
+):
     """ModelAdmin base class for tenant-local models."""
 
     multitenant_scope = "tenant"

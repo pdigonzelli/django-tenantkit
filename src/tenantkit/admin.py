@@ -232,6 +232,9 @@ class TenantAdmin(SoftDeleteAdminMixin, SharedScopeModelAdmin):
         "created_at",
         "updated_at",
         "deleted_at",
+        "created_by",
+        "updated_by",
+        "deleted_by",
         "has_connection_string",
         "has_provisioning_connection_string",
     )
@@ -280,7 +283,17 @@ class TenantAdmin(SoftDeleteAdminMixin, SharedScopeModelAdmin):
         ),
         (
             "Audit",
-            {"fields": ["created_at", "updated_at", "deleted_at"]},
+            {
+                "classes": ["collapse"],
+                "fields": [
+                    "created_at",
+                    "created_by",
+                    "updated_at",
+                    "updated_by",
+                    "deleted_at",
+                    "deleted_by",
+                ],
+            },
         ),
     ]
 
@@ -641,16 +654,89 @@ class TenantAdmin(SoftDeleteAdminMixin, SharedScopeModelAdmin):
 
 
 class TenantInvitationAdmin(SoftDeleteAdminMixin, SharedScopeModelAdmin):
-    list_display = ("tenant", "email", "status", "expires_at", "deleted_at")
+    list_display = (
+        "tenant",
+        "email",
+        "status",
+        "expires_at",
+        "created_at",
+        "deleted_at",
+    )
     list_filter = ("status",) + SoftDeleteAdminMixin.list_filter
     search_fields = ("tenant__slug", "tenant__name", "email")
+    readonly_fields = (
+        "created_at",
+        "updated_at",
+        "deleted_at",
+        "created_by",
+        "updated_by",
+        "deleted_by",
+    )
+    fieldsets = [
+        (
+            None,
+            {
+                "fields": [
+                    "tenant",
+                    "email",
+                    "token",
+                    "status",
+                    "expires_at",
+                    "accepted_at",
+                    "accepted_by",
+                ]
+            },
+        ),
+        (
+            "Audit",
+            {
+                "classes": ["collapse"],
+                "fields": [
+                    "created_at",
+                    "created_by",
+                    "updated_at",
+                    "updated_by",
+                    "deleted_at",
+                    "deleted_by",
+                ],
+            },
+        ),
+    ]
     actions = SoftDeleteAdminMixin.actions
 
 
 class TenantSettingAdmin(SoftDeleteAdminMixin, SharedScopeModelAdmin):
-    list_display = ("tenant", "key", "deleted_at")
+    list_display = ("tenant", "key", "created_at", "updated_at", "deleted_at")
     search_fields = ("tenant__slug", "tenant__name", "key")
     list_filter = SoftDeleteAdminMixin.list_filter
+    readonly_fields = (
+        "created_at",
+        "updated_at",
+        "deleted_at",
+        "created_by",
+        "updated_by",
+        "deleted_by",
+    )
+    fieldsets = [
+        (
+            None,
+            {"fields": ["tenant", "key", "value"]},
+        ),
+        (
+            "Audit",
+            {
+                "classes": ["collapse"],
+                "fields": [
+                    "created_at",
+                    "created_by",
+                    "updated_at",
+                    "updated_by",
+                    "deleted_at",
+                    "deleted_by",
+                ],
+            },
+        ),
+    ]
     actions = SoftDeleteAdminMixin.actions
 
 

@@ -86,26 +86,58 @@ class TenantAdminAuthenticationForm(AdminAuthenticationForm):
         if username is None or not password:
             return self.cleaned_data
 
-        strategy = None
+        user_model = get_user_model()
+        
+        # For SCHEMA tenants: temporarily set search_path to tenant schema
+        # to find the user in the correct location
+        from django.db import connection
+        
         if tenant.isolation_mode == Tenant.IsolationMode.SCHEMA:
-            strategy = SchemaStrategy()
+            schema_name = tenant.schema_name
+
+            with connection.cursor() as cursor:
+                # Capturar search_path actual de forma segura
+                cursor.execute("SELECT pg_catalog.current_setting('search_path')")
+                old_search_path = cursor.fetchone()[0]
+
+                try:
+                    # Setear search_path al tenant schema usando quote_ident para seguridad
+                    cursor.execute(
+                        """
+                        SELECT pg_catalog.set_config(
+                            'search_path',
+                            pg_catalog.quote_ident(%s) || ', public',
+                            false
+                        )
+                        """,
+                        [schema_name],
+                    )
+
+                    # Lookup user en el tenant schema
+                    try:
+                        user = user_model._default_manager.get_by_natural_key(username)
+                    except user_model.DoesNotExist:
+                        raise self.get_invalid_login_error() from None
+
+                    if not user.check_password(password):
+                        raise self.get_invalid_login_error()
+
+                    self.confirm_login_allowed(user)
+                    user.backend = settings.AUTHENTICATION_BACKENDS[0]
+                    self.user_cache = user
+
+                finally:
+                    # Restaurar search_path original de forma segura
+                    cursor.execute(
+                        "SELECT pg_catalog.set_config('search_path', %s, false)",
+                        [old_search_path],
+                    )
+        
         elif tenant.isolation_mode == Tenant.IsolationMode.DATABASE:
             ensure_runtime_tenant_connection(tenant)
             strategy = DatabaseStrategy()
-
-        try:
-            set_current_tenant(tenant)
-            if strategy is not None:
-                set_current_strategy(strategy)
-                strategy.activate(tenant)
-
-            user_model = get_user_model()
-            database_alias = (
-                strategy.db_for_read(user_model, tenant=tenant)
-                if strategy is not None
-                else "default"
-            ) or "default"
-
+            database_alias = strategy.db_for_read(user_model, tenant=tenant) or "default"
+            
             try:
                 user = user_model._default_manager.db_manager(
                     database_alias
@@ -119,15 +151,9 @@ class TenantAdminAuthenticationForm(AdminAuthenticationForm):
             self.confirm_login_allowed(user)
             user.backend = settings.AUTHENTICATION_BACKENDS[0]
             self.user_cache = user
-            cleaned_data = self.cleaned_data
-        finally:
-            if strategy is not None:
-                strategy.deactivate()
-            clear_current_strategy()
-            clear_current_tenant()
 
         self.tenant_obj = tenant
-        return cleaned_data
+        return self.cleaned_data
 
 
 class TenantAdminLoginView(LoginView):

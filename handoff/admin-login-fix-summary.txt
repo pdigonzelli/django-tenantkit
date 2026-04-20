@@ -1,0 +1,86 @@
+TENANTKIT ADMIN LOGIN FIX - SUMMARY
+====================================
+
+COMPLETED: 2026-04-20
+
+PROBLEM:
+--------
+Admin login with SCHEMA tenant selected failed with HTTP 200 instead of redirect.
+
+When attempting to log in to Django admin with a SCHEMA-type tenant selected,
+the authentication would fail silently. Instead of redirecting to the admin index,
+the login page would reload with HTTP 200 status, showing no clear error messages.
+
+ROOT CAUSE:
+-----------
+Unsafe f-string interpolation in search_path restoration:
+
+  cursor.execute(f'SET search_path TO {old_search_path}')
+
+Failed when old_search_path contained special characters like '"$user", public'.
+The resulting SQL statement was invalid because identifiers with special characters
+were not properly escaped, causing PostgreSQL parsing errors.
+
+SOLUTION:
+---------
+Replaced with safe PostgreSQL catalog functions:
+
+  Capture:
+    SELECT pg_catalog.current_setting('search_path')
+    
+  Set tenant schema (with safe escaping):
+    SELECT pg_catalog.set_config('search_path', pg_catalog.quote_ident(%s) || ', public', false)
+    
+  Restore original:
+    SELECT pg_catalog.set_config('search_path', %s, false)
+
+Benefits:
+  - pg_catalog.quote_ident() properly escapes identifiers
+  - Uses standard PostgreSQL catalog functions
+  - Handles complex search_path values correctly
+  - More maintainable and explicit code
+
+FILES CHANGED:
+--------------
+  - src/tenantkit/admin_site.py (bugfix)
+  - src/tenantkit/tests.py (6 new tests added)
+  - docs/setup-standard.md (new)
+  - docs/configuration-guide.md (updated)
+  - docs/technical-admin-login-fix.md (new)
+  - README.md (updated)
+
+TESTS ADDED:
+------------
+  - test_schema_tenant_search_path_restoration_with_complex_values
+  - test_schema_tenant_login_success
+  - test_schema_tenant_login_user_not_found
+  - test_schema_tenant_login_wrong_password
+  - test_schema_tenant_uses_quote_ident
+  - test_database_tenant_login_still_works
+
+VALIDATION:
+-----------
+  ✓ Login with SCHEMA tenant: PASSED
+  ✓ Configuration validation (sensorData): PASSED
+  ✓ DATABASE tenant regression test: PASSED
+
+CONFIGURATION REQUIREMENTS:
+---------------------------
+Correct order in INSTALLED_APPS:
+  1. django.contrib.auth
+  2. tenantkit
+
+Correct order in MIDDLEWARE:
+  1. AuthenticationMiddleware
+  2. TenantMiddleware
+
+See docs/setup-standard.md for complete configuration guide.
+
+DOCUMENTATION:
+--------------
+  Technical details: docs/technical-admin-login-fix.md
+  Setup guide: docs/setup-standard.md
+  Configuration: docs/configuration-guide.md
+  Machine-readable: handoff/admin-login-fix-summary.yaml
+
+STATUS: COMPLETE - Ready for production use

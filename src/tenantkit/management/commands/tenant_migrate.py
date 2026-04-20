@@ -35,7 +35,13 @@ from django.core.management.base import CommandError, CommandParser
 from django.core.management.commands.migrate import Command as MigrateCommand
 from django.db import DEFAULT_DB_ALIAS, connections
 
-from tenantkit.core.context import get_current_tenant, set_current_tenant
+from tenantkit.bootstrap import register_database_tenant_connection
+from tenantkit.core.context import (
+    clear_current_strategy,
+    get_current_tenant,
+    set_current_strategy,
+    set_current_tenant,
+)
 from tenantkit.model_config import ModelRegistry
 from tenantkit.models import Tenant
 
@@ -247,6 +253,8 @@ class Command(MigrateCommand):
         """Migrate a schema-based tenant."""
         from django.db import connection
 
+        from tenantkit.strategies.schema.strategy import SchemaStrategy
+
         schema_name = tenant.schema_name
         if not schema_name:
             raise CommandError(f"Tenant {tenant.slug} has no schema_name defined.")
@@ -264,9 +272,13 @@ class Command(MigrateCommand):
                     cursor.execute(f'CREATE SCHEMA IF NOT EXISTS "{schema_name}"')
                     self.stdout.write(self.style.SUCCESS("  ✓ Schema created"))
 
-        # Set search path for this tenant
-        with connection.cursor() as cursor:
-            cursor.execute(f'SET search_path TO "{schema_name}"')
+        # Set strategy context and activate schema for this tenant.
+        # This is critical: the router checks for an active strategy to decide
+        # whether tenant models are allowed on "default" (schema-based tenants
+        # use the default database with a different search_path).
+        strategy = SchemaStrategy()
+        set_current_strategy(strategy)
+        strategy.activate(tenant)
 
         try:
             # Run migrations in this schema context
@@ -278,9 +290,9 @@ class Command(MigrateCommand):
                 using=DEFAULT_DB_ALIAS,
             )
         finally:
-            # Reset search path
-            with connection.cursor() as cursor:
-                cursor.execute("SET search_path TO public")
+            # Deactivate schema and clear strategy context
+            strategy.deactivate()
+            clear_current_strategy()
 
     def _migrate_database_tenant(
         self,
@@ -290,25 +302,38 @@ class Command(MigrateCommand):
         tenant_apps: set[str],
     ) -> None:
         """Migrate a database-based tenant."""
+        from tenantkit.strategies.database.strategy import DatabaseStrategy
+
         connection_alias = str(tenant.connection_alias or "")
         if not connection_alias:
             raise CommandError(f"Tenant {tenant.slug} has no connection_alias defined.")
 
-        # Check if connection is configured
+        # Ensure the tenant connection exists in this process before migrating.
+        register_database_tenant_connection(tenant)
+
         if connection_alias not in connections:
             raise CommandError(
-                f"Connection '{connection_alias}' for tenant {tenant.slug} is not configured. "
-                f"Make sure to register the tenant connection in DATABASES setting."
+                f"Connection '{connection_alias}' for tenant {tenant.slug} could not be registered. "
+                f"Check connection_alias and connection_string for the tenant."
             )
 
-        # Run migrations on tenant's database
-        self._run_migrations_in_context(
-            tenant=tenant,
-            args=args,
-            options=options,
-            tenant_apps=tenant_apps,
-            using=connection_alias,
-        )
+        # Set strategy context for this tenant.
+        # This ensures the router can correctly identify database-based tenants
+        # and route tenant model migrations to the correct database.
+        strategy = DatabaseStrategy()
+        set_current_strategy(strategy)
+
+        try:
+            # Run migrations on tenant's database
+            self._run_migrations_in_context(
+                tenant=tenant,
+                args=args,
+                options=options,
+                tenant_apps=tenant_apps,
+                using=connection_alias,
+            )
+        finally:
+            clear_current_strategy()
 
     def _run_migrations_in_context(
         self,

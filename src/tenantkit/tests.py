@@ -60,9 +60,11 @@ from tenantkit.core.context import (
 from tenantkit.crypto import decrypt_text, encrypt_text
 from tenantkit.middleware.tenant import TenantMiddleware
 from tenantkit.model_config import (
+    MODEL_TYPE_SHARED,
     MODEL_TYPE_TENANT,
     ModelRegistry,
     get_models_for_migration,
+    shared_model,
     tenant_model,
 )
 from tenantkit.models import Tenant, TenantInvitation, TenantSetting, TenantSharedModel
@@ -70,7 +72,7 @@ from tenantkit.provisioning import (
     ensure_database_exists,
     ensure_database_tenant_ready,
 )
-from tenantkit.routers.tenant import TenantRouter
+from tenantkit.routers.tenant import TenantRouter, _resolve_model_for_migration
 from tenantkit.strategies.database.strategy import DatabaseStrategy
 from tenantkit.strategies.schema.strategy import SchemaStrategy
 
@@ -95,6 +97,30 @@ class DummyGlobalTenantRecord(models.Model):
 
     class Meta:
         app_label = "tenantkit"
+        managed = False
+
+    def __str__(self) -> str:
+        return str(self.name)
+
+
+@shared_model
+class DummySharedInTenantApp(models.Model):
+    name = models.CharField(max_length=64)
+
+    class Meta:
+        app_label = "tenantkit"
+        managed = False
+
+    def __str__(self) -> str:
+        return str(self.name)
+
+
+@tenant_model
+class DummyTenantInSharedApp(models.Model):
+    name = models.CharField(max_length=64)
+
+    class Meta:
+        app_label = "auth"
         managed = False
 
     def __str__(self) -> str:
@@ -568,6 +594,58 @@ class TenantRouterTests(TestCase):
         clear_classification_caches()
 
         self.assertEqual(get_app_scope("auth"), MODEL_TYPE_BOTH)
+
+    @override_settings(TENANTKIT_TENANT_APPS=["tenantkit"])
+    def test_model_scope_shared_overrides_tenant_app_scope_for_migrations(self):
+        clear_classification_caches()
+        router = TenantRouter()
+
+        self.assertEqual(get_model_scope(DummySharedInTenantApp), MODEL_TYPE_SHARED)
+        self.assertTrue(
+            router.allow_migrate("default", "tenantkit", "dummysharedintenantapp")
+        )
+        self.assertFalse(
+            router.allow_migrate("tenant_db", "tenantkit", "dummysharedintenantapp")
+        )
+
+    @override_settings(TENANTKIT_SHARED_APPS=["django.contrib.auth"])
+    def test_model_scope_tenant_overrides_shared_app_scope_for_migrations(self):
+        clear_classification_caches()
+        router = TenantRouter()
+
+        self.assertEqual(get_model_scope(DummyTenantInSharedApp), MODEL_TYPE_TENANT)
+        self.assertFalse(
+            router.allow_migrate("default", "auth", "dummytenantinsharedapp")
+        )
+        self.assertIsNone(
+            router.allow_migrate("tenant_db", "auth", "dummytenantinsharedapp")
+        )
+
+    @override_settings(TENANTKIT_TENANT_APPS=["tenantkit"])
+    def test_migration_resolution_prefers_live_model_over_unclassified_historical_model(
+        self,
+    ):
+        clear_classification_caches()
+
+        class HistoricalDummySharedInTenantApp:
+            class _meta:
+                app_label = "tenantkit"
+
+        resolved = _resolve_model_for_migration(
+            "tenantkit", "dummysharedintenantapp", HistoricalDummySharedInTenantApp
+        )
+
+        self.assertIs(resolved, DummySharedInTenantApp)
+        self.assertEqual(get_model_scope(resolved), MODEL_TYPE_SHARED)
+        router = TenantRouter()
+        self.assertTrue(
+            router.allow_migrate(
+                "default",
+                "tenantkit",
+                "dummysharedintenantapp",
+                model=HistoricalDummySharedInTenantApp,
+            )
+        )
 
     def test_registry_tracks_concrete_tenant_model_configuration(self):
         self.assertTrue(ModelRegistry.is_tenant_model(DummyTenantRecord))
@@ -1162,6 +1240,372 @@ class _BackendWithHeader(_BackendWithoutHeader):
 class _ConfigurableJWTBackend(_BackendWithHeader):
     def __init__(self) -> None:
         super().__init__((User(), {"tenant_slug": "config-tenant"}))
+
+
+class TenantAdminAuthenticationFormCleanTests(TestCase):
+    """Tests for TenantAdminAuthenticationForm.clean() with SCHEMA and DATABASE tenants."""
+
+    def setUp(self):
+        """Set up test data."""
+        self.user = User.objects.create_user(username="testuser", password="testpass123")
+        self.superuser = User.objects.create_superuser(
+            username="admin", password="admin123", email="admin@example.com"
+        )
+
+        # Create SCHEMA tenant
+        self.schema_tenant = Tenant.objects.create(
+            slug="test-schema",
+            name="Test Schema Tenant",
+            isolation_mode=Tenant.IsolationMode.SCHEMA,
+            provisioning_mode=Tenant.ProvisioningMode.MANUAL,
+            schema_name="test_tenant_schema",
+        )
+
+        # Create DATABASE tenant
+        self.database_tenant = Tenant.objects.create(
+            slug="test-db",
+            name="Test DB Tenant",
+            isolation_mode=Tenant.IsolationMode.DATABASE,
+            provisioning_mode=Tenant.ProvisioningMode.MANUAL,
+            connection_alias="tenant_test_db",
+        )
+
+    def _create_mock_cursor(self, search_path='"$user", public'):
+        """Create a mock cursor that simulates PostgreSQL behavior."""
+        mock_cursor = MagicMock()
+        mock_cursor.fetchone.return_value = (search_path,)
+        return mock_cursor
+
+    def test_schema_tenant_search_path_restoration_with_complex_values(self):
+        """
+        Test that search_path is correctly restored even with complex values
+        like '"$user", public' that would break with f-string interpolation.
+        """
+        # Complex search_path that would break with f-string interpolation
+        complex_search_path = '"$user", public'
+
+        mock_cursor = self._create_mock_cursor(complex_search_path)
+        mock_connection = MagicMock()
+        mock_connection.cursor.return_value.__enter__ = MagicMock(return_value=mock_cursor)
+        mock_connection.cursor.return_value.__exit__ = MagicMock(return_value=False)
+
+        with patch("tenantkit.admin_site.connection", mock_connection):
+            with patch("tenantkit.admin_site.get_user_model") as mock_get_user_model:
+                # Mock user lookup to succeed
+                mock_user = MagicMock()
+                mock_user.check_password.return_value = True
+                mock_user.is_active = True
+                mock_user.is_staff = True
+
+                mock_manager = MagicMock()
+                mock_manager.get_by_natural_key.return_value = mock_user
+                mock_model = MagicMock()
+                mock_model._default_manager = mock_manager
+                mock_model.DoesNotExist = User.DoesNotExist
+                mock_get_user_model.return_value = mock_model
+
+                form = TenantAdminAuthenticationForm(
+                    data={
+                        "username": "admin",
+                        "password": "admin123",
+                        "tenant": self.schema_tenant.pk,
+                    }
+                )
+
+                # Form should be valid
+                self.assertTrue(form.is_valid())
+
+                # Verify search_path was captured with current_setting
+                execute_calls = [call[0][0] for call in mock_cursor.execute.call_args_list]
+                self.assertTrue(
+                    any("current_setting" in str(call) for call in execute_calls),
+                    "current_setting should be used to capture search_path"
+                )
+
+                # Verify set_config was called to restore the original search_path
+                set_config_calls = [
+                    call for call in execute_calls
+                    if "set_config" in str(call) and "search_path" in str(call)
+                ]
+                self.assertEqual(len(set_config_calls), 2, "set_config should be called twice (set and restore)")
+
+                # Verify the restoration uses %s placeholder (not f-string)
+                restore_call = set_config_calls[-1]
+                self.assertIn("%s", str(restore_call), "Restoration should use %s placeholder")
+                self.assertNotIn('"$user"', str(restore_call).split("%s")[0],
+                    "Complex values should be passed as parameters, not interpolated")
+
+    def test_schema_tenant_login_success(self):
+        """
+        Test successful login with SCHEMA tenant selected.
+        Verifies that:
+        - User is found in tenant schema
+        - Password is checked correctly
+        - User is authenticated
+        - tenant_obj is set in form
+        """
+        mock_cursor = self._create_mock_cursor("public")
+        mock_connection = MagicMock()
+        mock_connection.cursor.return_value.__enter__ = MagicMock(return_value=mock_cursor)
+        mock_connection.cursor.return_value.__exit__ = MagicMock(return_value=False)
+
+        with patch("tenantkit.admin_site.connection", mock_connection):
+            with patch("tenantkit.admin_site.get_user_model") as mock_get_user_model:
+                # Create mock user that simulates a user in the tenant schema
+                mock_user = MagicMock()
+                mock_user.check_password.return_value = True
+                mock_user.is_active = True
+                mock_user.is_staff = True
+                mock_user.pk = 123
+
+                mock_manager = MagicMock()
+                mock_manager.get_by_natural_key.return_value = mock_user
+                mock_model = MagicMock()
+                mock_model._default_manager = mock_manager
+                mock_model.DoesNotExist = User.DoesNotExist
+                mock_get_user_model.return_value = mock_model
+
+                form = TenantAdminAuthenticationForm(
+                    data={
+                        "username": "tenantuser",
+                        "password": "correctpass",
+                        "tenant": self.schema_tenant.pk,
+                    }
+                )
+
+                # Form should be valid
+                is_valid = form.is_valid()
+                self.assertTrue(is_valid, f"Form errors: {form.errors}")
+
+                # Verify user was looked up
+                mock_manager.get_by_natural_key.assert_called_once_with("tenantuser")
+
+                # Verify password was checked
+                mock_user.check_password.assert_called_once_with("correctpass")
+
+                # Verify user is cached in form
+                self.assertEqual(form.user_cache, mock_user)
+
+                # Verify tenant_obj is set
+                self.assertIsNotNone(form.tenant_obj)
+                self.assertEqual(form.tenant_obj.pk, self.schema_tenant.pk)
+
+                # Verify search_path was set to tenant schema
+                execute_calls = [call[0][0] for call in mock_cursor.execute.call_args_list]
+                set_tenant_path_call = None
+                for call in execute_calls:
+                    if "set_config" in str(call) and "test_tenant_schema" in str(call):
+                        set_tenant_path_call = call
+                        break
+                self.assertIsNotNone(set_tenant_path_call, "Should set search_path to tenant schema")
+
+    def test_schema_tenant_login_user_not_found(self):
+        """
+        Test that login fails correctly when user doesn't exist in tenant schema.
+        Should NOT fallback to public schema user.
+        """
+        mock_cursor = self._create_mock_cursor("public")
+        mock_connection = MagicMock()
+        mock_connection.cursor.return_value.__enter__ = MagicMock(return_value=mock_cursor)
+        mock_connection.cursor.return_value.__exit__ = MagicMock(return_value=False)
+
+        with patch("tenantkit.admin_site.connection", mock_connection):
+            with patch("tenantkit.admin_site.get_user_model") as mock_get_user_model:
+                # Simulate user not found in tenant schema
+                mock_manager = MagicMock()
+                mock_manager.get_by_natural_key.side_effect = User.DoesNotExist
+                mock_model = MagicMock()
+                mock_model._default_manager = mock_manager
+                mock_model.DoesNotExist = User.DoesNotExist
+                mock_get_user_model.return_value = mock_model
+
+                form = TenantAdminAuthenticationForm(
+                    data={
+                        "username": "nonexistentuser",
+                        "password": "anypassword",
+                        "tenant": self.schema_tenant.pk,
+                    }
+                )
+
+                # Form should be invalid
+                self.assertFalse(form.is_valid())
+
+                # Verify error message
+                self.assertIn(
+                    "Please enter the correct username and password",
+                    str(form.non_field_errors())
+                )
+
+                # Verify search_path was still restored in finally block
+                execute_calls = [call[0][0] for call in mock_cursor.execute.call_args_list]
+                set_config_calls = [call for call in execute_calls if "set_config" in str(call)]
+                self.assertEqual(len(set_config_calls), 2, "Should set and restore search_path even on failure")
+
+    def test_schema_tenant_login_wrong_password(self):
+        """
+        Test that login fails correctly with wrong password in tenant schema.
+        """
+        mock_cursor = self._create_mock_cursor("public")
+        mock_connection = MagicMock()
+        mock_connection.cursor.return_value.__enter__ = MagicMock(return_value=mock_cursor)
+        mock_connection.cursor.return_value.__exit__ = MagicMock(return_value=False)
+
+        with patch("tenantkit.admin_site.connection", mock_connection):
+            with patch("tenantkit.admin_site.get_user_model") as mock_get_user_model:
+                # Create mock user with wrong password
+                mock_user = MagicMock()
+                mock_user.check_password.return_value = False  # Wrong password
+
+                mock_manager = MagicMock()
+                mock_manager.get_by_natural_key.return_value = mock_user
+                mock_model = MagicMock()
+                mock_model._default_manager = mock_manager
+                mock_model.DoesNotExist = User.DoesNotExist
+                mock_get_user_model.return_value = mock_model
+
+                form = TenantAdminAuthenticationForm(
+                    data={
+                        "username": "existinguser",
+                        "password": "wrongpassword",
+                        "tenant": self.schema_tenant.pk,
+                    }
+                )
+
+                # Form should be invalid
+                self.assertFalse(form.is_valid())
+
+                # Verify error message
+                self.assertIn(
+                    "Please enter the correct username and password",
+                    str(form.non_field_errors())
+                )
+
+                # Verify password was checked
+                mock_user.check_password.assert_called_once_with("wrongpassword")
+
+    def test_schema_tenant_uses_quote_ident(self):
+        """
+        Test that schema names are properly escaped using quote_ident.
+        This prevents SQL injection via schema_name.
+        """
+        # Create a tenant with a malicious schema name
+        malicious_tenant = Tenant.objects.create(
+            slug="malicious-tenant",
+            name="Malicious Tenant",
+            isolation_mode=Tenant.IsolationMode.SCHEMA,
+            provisioning_mode=Tenant.ProvisioningMode.MANUAL,
+            schema_name="public'; DROP TABLE users; --",
+        )
+
+        mock_cursor = self._create_mock_cursor("public")
+        mock_connection = MagicMock()
+        mock_connection.cursor.return_value.__enter__ = MagicMock(return_value=mock_cursor)
+        mock_connection.cursor.return_value.__exit__ = MagicMock(return_value=False)
+
+        with patch("tenantkit.admin_site.connection", mock_connection):
+            with patch("tenantkit.admin_site.get_user_model") as mock_get_user_model:
+                mock_user = MagicMock()
+                mock_user.check_password.return_value = True
+                mock_user.is_active = True
+                mock_user.is_staff = True
+
+                mock_manager = MagicMock()
+                mock_manager.get_by_natural_key.return_value = mock_user
+                mock_model = MagicMock()
+                mock_model._default_manager = mock_manager
+                mock_model.DoesNotExist = User.DoesNotExist
+                mock_get_user_model.return_value = mock_model
+
+                form = TenantAdminAuthenticationForm(
+                    data={
+                        "username": "user",
+                        "password": "pass",
+                        "tenant": malicious_tenant.pk,
+                    }
+                )
+
+                form.is_valid()
+
+                # Verify that quote_ident is used in the SQL
+                execute_calls = [call[0][0] for call in mock_cursor.execute.call_args_list]
+                set_config_calls = [
+                    call for call in execute_calls
+                    if "set_config" in str(call) and "search_path" in str(call)
+                ]
+
+                # The first set_config should use quote_ident
+                self.assertTrue(len(set_config_calls) >= 1, "Should have set_config calls")
+                first_set_config = set_config_calls[0]
+                self.assertIn("quote_ident", str(first_set_config).lower(),
+                    "Schema name should be escaped using quote_ident")
+
+                # Verify the malicious schema name is passed as a parameter (%s)
+                # and not directly interpolated
+                call_args = mock_cursor.execute.call_args_list
+                for call in call_args:
+                    sql, params = call[0]
+                    if "set_config" in str(sql) and "search_path" in str(sql):
+                        # Check that the schema name is in params, not in the SQL
+                        if params and malicious_tenant.schema_name in params:
+                            self.assertNotIn(malicious_tenant.schema_name, str(sql),
+                                "Malicious schema name should be a parameter, not in SQL")
+
+    def test_database_tenant_login_still_works(self):
+        """
+        Regression test: Ensure DATABASE tenant login wasn't broken by SCHEMA fix.
+        """
+        with patch("tenantkit.admin_site.ensure_runtime_tenant_connection") as mock_ensure:
+            with patch("tenantkit.admin_site.DatabaseStrategy") as mock_strategy_class:
+                with patch("tenantkit.admin_site.get_user_model") as mock_get_user_model:
+                    # Mock the strategy
+                    mock_strategy = MagicMock()
+                    mock_strategy.db_for_read.return_value = "tenant_test_db"
+                    mock_strategy_class.return_value = mock_strategy
+
+                    # Mock user lookup
+                    mock_user = MagicMock()
+                    mock_user.check_password.return_value = True
+                    mock_user.is_active = True
+                    mock_user.is_staff = True
+
+                    mock_manager = MagicMock()
+                    mock_manager.db_manager.return_value.get_by_natural_key.return_value = mock_user
+                    mock_model = MagicMock()
+                    mock_model._default_manager = mock_manager
+                    mock_model.DoesNotExist = User.DoesNotExist
+                    mock_get_user_model.return_value = mock_model
+
+                    form = TenantAdminAuthenticationForm(
+                        data={
+                            "username": "dbuser",
+                            "password": "dbpass",
+                            "tenant": self.database_tenant.pk,
+                        }
+                    )
+
+                    # Form should be valid
+                    is_valid = form.is_valid()
+                    self.assertTrue(is_valid, f"Form errors: {form.errors}")
+
+                    # Verify ensure_runtime_tenant_connection was called
+                    mock_ensure.assert_called_once_with(self.database_tenant)
+
+                    # Verify DatabaseStrategy was instantiated
+                    mock_strategy_class.assert_called_once()
+
+                    # Verify db_for_read was called
+                    mock_strategy.db_for_read.assert_called_once()
+
+                    # Verify user was looked up using the correct database alias
+                    mock_manager.db_manager.assert_called_once_with("tenant_test_db")
+                    mock_manager.db_manager.return_value.get_by_natural_key.assert_called_once_with("dbuser")
+
+                    # Verify user is cached
+                    self.assertEqual(form.user_cache, mock_user)
+
+                    # Verify tenant_obj is set
+                    self.assertIsNotNone(form.tenant_obj)
+                    self.assertEqual(form.tenant_obj.pk, self.database_tenant.pk)
 
 
 class AuthHelpersTests(TestCase):

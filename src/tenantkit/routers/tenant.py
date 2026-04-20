@@ -22,9 +22,48 @@ from tenantkit.classification import (
     get_model_scope,
 )
 from tenantkit.core.context import get_current_strategy, get_current_tenant
-from tenantkit.model_config import MODEL_TYPE_SHARED, MODEL_TYPE_TENANT, ModelRegistry
+from tenantkit.model_config import (
+    MODEL_TYPE_SHARED,
+    MODEL_TYPE_TENANT,
+    ModelRegistry,
+)
 
 logger = logging.getLogger(__name__)
+
+
+def _resolve_model_for_migration(
+    app_label: str, model_name: str | None, hinted_model: Any | None
+) -> Any | None:
+    """Resolve the best model object for migration routing.
+
+    Django migrations may pass historical models in ``hints['model']``. Those
+    historical model classes do not carry decorator-based registry metadata, so
+    we prefer them only when they already classify explicitly; otherwise we
+    fall back to the live app model resolved from the app registry.
+    """
+    if hinted_model is not None:
+        hinted_config = ModelRegistry.get_model_config(hinted_model)
+        if hinted_config is not None:
+            return hinted_model
+
+    if model_name:
+        normalized_model_name = model_name.lower()
+
+        for config in ModelRegistry.get_all_models():
+            if (
+                config.get("app_label") == app_label
+                and config.get("model_name") == normalized_model_name
+            ):
+                return config["model_class"]
+
+        try:
+            from django.apps import apps
+
+            return apps.get_model(app_label, model_name)
+        except LookupError:
+            pass
+
+    return hinted_model
 
 
 class TenantRouter:
@@ -249,7 +288,58 @@ class TenantRouter:
         Returns:
             True if migration is allowed, False if not, None to defer
         """
-        # 1. Check dual apps first — they migrate everywhere
+        # 1. Resolve model-specific scope first so decorators override app scope.
+        model = _resolve_model_for_migration(app_label, model_name, hints.get("model"))
+
+        if model:
+            scope = get_model_scope(model)
+
+            if scope == MODEL_TYPE_SHARED:
+                # Shared models only migrate on default database.
+                # When a tenant context is active (during tenant migrations),
+                # shared models should NOT be created on default because the
+                # search_path may point to the tenant schema, which would
+                # incorrectly place shared tables in the tenant's schema.
+                if db == "default":
+                    tenant = self._get_tenant(hints)
+                    strategy = self._get_strategy()
+                    if tenant is not None and strategy is not None:
+                        logger.debug(
+                            f"Blocking shared model {model.__name__} migration "
+                            f"on default during tenant context ({tenant.slug})"
+                        )
+                        return False
+                    return True
+                return False
+
+            if scope == MODEL_TYPE_TENANT:
+                # Tenant models don't migrate on default database in general.
+                # However, for schema-based tenants, the default database is used
+                # with a different search_path. When a schema strategy is active,
+                # tenant models should be allowed on "default" because the
+                # search_path is already set to the tenant's schema.
+                if db == "default":
+                    tenant = self._get_tenant(hints)
+                    strategy = self._get_strategy()
+                    if tenant is not None and strategy is not None:
+                        target_db = strategy.db_for_write(model, tenant=tenant)
+                        if target_db == "default":
+                            logger.debug(
+                                f"Allowing tenant model {model.__name__} migration "
+                                f"on default for schema-based tenant {tenant.slug}"
+                            )
+                            return True
+                    logger.debug(
+                        f"Blocking tenant model {model.__name__} migration on default database"
+                    )
+                    return False
+                # Allow on tenant databases
+                return None
+
+            if scope == MODEL_TYPE_BOTH:
+                return True
+
+        # 2. Fall back to app scope when the model is not explicitly classified.
         if app_label in get_both_app_labels():
             return True
 
@@ -258,33 +348,6 @@ class TenantRouter:
             return db == "default"
         if app_scope == MODEL_TYPE_TENANT:
             return db != "default"
-
-        # 2. Try to resolve the model for registry-based routing
-        model = None
-        if model_name:
-            try:
-                from django.apps import apps
-
-                model = apps.get_model(app_label, model_name)
-            except LookupError:
-                pass
-
-        if model:
-            scope = get_model_scope(model)
-
-            if scope == MODEL_TYPE_SHARED:
-                # Shared models only migrate on default database
-                return db == "default"
-
-            if scope == MODEL_TYPE_TENANT:
-                # Tenant models don't migrate on default (they migrate on tenant DBs)
-                if db == "default":
-                    return False
-                # Allow on tenant databases
-                return None
-
-            if scope == MODEL_TYPE_BOTH:
-                return True
 
         # 3. Unclassified models → default only
         return db == "default"

@@ -140,6 +140,25 @@ wheels = [
 ]
 
 [[package]]
+name = "django-auditkit"
+version = "0.1.0"
+source = { editable = "../django-auditkit" }
+dependencies = [
+    { name = "django" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "django", specifier = ">=6.0.3" }]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "basedpyright", specifier = ">=1.29.0" },
+    { name = "pytest", specifier = ">=8.0.0" },
+    { name = "pytest-django", specifier = ">=4.5.0" },
+    { name = "ruff", specifier = ">=0.3.0" },
+]
+
+[[package]]
 name = "django-extensions"
 version = "4.1"
 source = { registry = "https://pypi.org/simple" }
@@ -157,6 +176,7 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "django" },
+    { name = "django-auditkit" },
     { name = "django-extensions" },
     { name = "djangorestframework" },
     { name = "drf-spectacular" },
@@ -176,6 +196,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "django", specifier = ">=6.0.3" },
+    { name = "django-auditkit", editable = "../django-auditkit" },
     { name = "django-extensions", specifier = ">=4.1" },
     { name = "djangorestframework", specifier = ">=3.17.0" },
     { name = "drf-spectacular", specifier = ">=0.29.0" },
