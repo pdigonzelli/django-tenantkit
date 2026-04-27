@@ -34,7 +34,7 @@ dependencies = [
 ]
 
 [tool.uv.sources]
-django-auditkit = { path = "/home/pdigonzelli/proyectos/django-auditkit", editable = true }
+django-auditkit = { git = "https://github.com/pdigonzelli/django-auditkit.git" }
 
 [dependency-groups]
 dev = [
