@@ -54,17 +54,20 @@ class TenantMiddleware(MiddlewareMixin):
             clear_current_tenant()
 
     def resolve_tenant(self, request: HttpRequest) -> Tenant | None:
-        if request.path.startswith("/admin/"):
-            return self.resolve_tenant_from_session(request)
+        # First, try to resolve from session (for web UI with tenant login)
+        tenant = self.resolve_tenant_from_session(request)
+        if tenant:
+            return tenant
 
+        # If no tenant in session, try X-Tenant header (for API calls)
         slug = request.META.get(self.header_name)
-        if not slug:
-            return None
+        if slug:
+            try:
+                return Tenant.objects.get(slug=slug)
+            except Tenant.DoesNotExist:  # type: ignore[attr-defined]
+                return None
 
-        try:
-            return Tenant.objects.get(slug=slug)
-        except Tenant.DoesNotExist:  # type: ignore[attr-defined]
-            return None
+        return None
 
     def resolve_tenant_from_session(self, request: HttpRequest) -> Tenant | None:
         session = getattr(request, "session", None)
