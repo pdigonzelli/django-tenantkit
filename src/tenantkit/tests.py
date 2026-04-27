@@ -1037,6 +1037,16 @@ class TenantAdminSiteTests(TestCase):
         request._dont_enforce_csrf_checks = True
         return request
 
+    def _create_mock_db_connection(self):
+        mock_cursor = MagicMock()
+        mock_cursor.fetchone.return_value = ("public",)
+        mock_connection = MagicMock()
+        mock_connection.cursor.return_value.__enter__ = MagicMock(
+            return_value=mock_cursor
+        )
+        mock_connection.cursor.return_value.__exit__ = MagicMock(return_value=False)
+        return mock_connection
+
     def test_tenant_switch_view_sets_tenant_in_session(self):
         request = self.factory.post(
             "/admin/tenant-switch/",
@@ -1151,28 +1161,27 @@ class TenantAdminSiteTests(TestCase):
         request.user = AnonymousUser()
 
         mock_manager = MagicMock()
-        mock_manager.db_manager.return_value.get_by_natural_key.side_effect = (
-            User.DoesNotExist
-        )
+        mock_manager.get_by_natural_key.side_effect = User.DoesNotExist
         mock_model = MagicMock()
         mock_model._default_manager = mock_manager
         mock_model.DoesNotExist = User.DoesNotExist
         mock_get_user_model.return_value = mock_model
 
-        form = TenantAdminAuthenticationForm(
-            request=request,
-            data={
-                "username": "admin",
-                "password": "admin123",
-                "tenant": self.tenant.pk,
-            },
-        )
+        with patch("django.db.connection", self._create_mock_db_connection()):
+            form = TenantAdminAuthenticationForm(
+                request=request,
+                data={
+                    "username": "admin",
+                    "password": "admin123",
+                    "tenant": self.tenant.pk,
+                },
+            )
 
-        self.assertFalse(form.is_valid())
-        self.assertIn(
-            "Please enter the correct username and password for a staff account.",
-            form.non_field_errors()[0],
-        )
+            self.assertFalse(form.is_valid())
+            self.assertIn(
+                "Please enter the correct username and password for a staff account.",
+                form.non_field_errors()[0],
+            )
 
     @patch("tenantkit.admin_site.get_user_model")
     def test_tenant_login_form_authenticates_user_from_tenant_context(
@@ -1187,27 +1196,26 @@ class TenantAdminSiteTests(TestCase):
         tenant_user.is_staff = True
 
         mock_manager = MagicMock()
-        mock_manager.db_manager.return_value.get_by_natural_key.return_value = (
-            tenant_user
-        )
+        mock_manager.get_by_natural_key.return_value = tenant_user
         mock_model = MagicMock()
         mock_model._default_manager = mock_manager
         mock_model.DoesNotExist = User.DoesNotExist
         mock_get_user_model.return_value = mock_model
 
-        form = TenantAdminAuthenticationForm(
-            request=request,
-            data={
-                "username": "tenant-admin",
-                "password": "secret",
-                "tenant": self.tenant.pk,
-            },
-        )
+        with patch("django.db.connection", self._create_mock_db_connection()):
+            form = TenantAdminAuthenticationForm(
+                request=request,
+                data={
+                    "username": "tenant-admin",
+                    "password": "secret",
+                    "tenant": self.tenant.pk,
+                },
+            )
 
-        self.assertTrue(form.is_valid())
-        self.assertIs(form.get_user(), tenant_user)
-        assert form.tenant_obj is not None
-        self.assertEqual(form.tenant_obj.pk, self.tenant.pk)
+            self.assertTrue(form.is_valid())
+            self.assertIs(form.get_user(), tenant_user)
+            assert form.tenant_obj is not None
+            self.assertEqual(form.tenant_obj.pk, self.tenant.pk)
 
 
 class _DummyTokenSerializer:
@@ -1247,7 +1255,9 @@ class TenantAdminAuthenticationFormCleanTests(TestCase):
 
     def setUp(self):
         """Set up test data."""
-        self.user = User.objects.create_user(username="testuser", password="testpass123")
+        self.user = User.objects.create_user(
+            username="testuser", password="testpass123"
+        )
         self.superuser = User.objects.create_superuser(
             username="admin", password="admin123", email="admin@example.com"
         )
@@ -1268,6 +1278,7 @@ class TenantAdminAuthenticationFormCleanTests(TestCase):
             isolation_mode=Tenant.IsolationMode.DATABASE,
             provisioning_mode=Tenant.ProvisioningMode.MANUAL,
             connection_alias="tenant_test_db",
+            connection_string="dummy",
         )
 
     def _create_mock_cursor(self, search_path='"$user", public'):
@@ -1286,54 +1297,68 @@ class TenantAdminAuthenticationFormCleanTests(TestCase):
 
         mock_cursor = self._create_mock_cursor(complex_search_path)
         mock_connection = MagicMock()
-        mock_connection.cursor.return_value.__enter__ = MagicMock(return_value=mock_cursor)
+        mock_connection.cursor.return_value.__enter__ = MagicMock(
+            return_value=mock_cursor
+        )
         mock_connection.cursor.return_value.__exit__ = MagicMock(return_value=False)
 
-        with patch("tenantkit.admin_site.connection", mock_connection):
-            with patch("tenantkit.admin_site.get_user_model") as mock_get_user_model:
-                # Mock user lookup to succeed
-                mock_user = MagicMock()
-                mock_user.check_password.return_value = True
-                mock_user.is_active = True
-                mock_user.is_staff = True
+        with (
+            patch("django.db.connection", mock_connection),
+            patch("tenantkit.admin_site.get_user_model") as mock_get_user_model,
+        ):
+            # Mock user lookup to succeed
+            mock_user = MagicMock()
+            mock_user.check_password.return_value = True
+            mock_user.is_active = True
+            mock_user.is_staff = True
 
-                mock_manager = MagicMock()
-                mock_manager.get_by_natural_key.return_value = mock_user
-                mock_model = MagicMock()
-                mock_model._default_manager = mock_manager
-                mock_model.DoesNotExist = User.DoesNotExist
-                mock_get_user_model.return_value = mock_model
+            mock_manager = MagicMock()
+            mock_manager.get_by_natural_key.return_value = mock_user
+            mock_model = MagicMock()
+            mock_model._default_manager = mock_manager
+            mock_model.DoesNotExist = User.DoesNotExist
+            mock_get_user_model.return_value = mock_model
 
-                form = TenantAdminAuthenticationForm(
-                    data={
-                        "username": "admin",
-                        "password": "admin123",
-                        "tenant": self.schema_tenant.pk,
-                    }
-                )
+            form = TenantAdminAuthenticationForm(
+                data={
+                    "username": "admin",
+                    "password": "admin123",
+                    "tenant": self.schema_tenant.pk,
+                }
+            )
 
-                # Form should be valid
-                self.assertTrue(form.is_valid())
+            # Form should be valid
+            self.assertTrue(form.is_valid())
 
-                # Verify search_path was captured with current_setting
-                execute_calls = [call[0][0] for call in mock_cursor.execute.call_args_list]
-                self.assertTrue(
-                    any("current_setting" in str(call) for call in execute_calls),
-                    "current_setting should be used to capture search_path"
-                )
+            # Verify search_path was captured with current_setting
+            execute_calls = [call[0][0] for call in mock_cursor.execute.call_args_list]
+            self.assertTrue(
+                any("current_setting" in str(call) for call in execute_calls),
+                "current_setting should be used to capture search_path",
+            )
 
-                # Verify set_config was called to restore the original search_path
-                set_config_calls = [
-                    call for call in execute_calls
-                    if "set_config" in str(call) and "search_path" in str(call)
-                ]
-                self.assertEqual(len(set_config_calls), 2, "set_config should be called twice (set and restore)")
+            # Verify set_config was called to restore the original search_path
+            set_config_calls = [
+                call
+                for call in execute_calls
+                if "set_config" in str(call) and "search_path" in str(call)
+            ]
+            self.assertEqual(
+                len(set_config_calls),
+                2,
+                "set_config should be called twice (set and restore)",
+            )
 
-                # Verify the restoration uses %s placeholder (not f-string)
-                restore_call = set_config_calls[-1]
-                self.assertIn("%s", str(restore_call), "Restoration should use %s placeholder")
-                self.assertNotIn('"$user"', str(restore_call).split("%s")[0],
-                    "Complex values should be passed as parameters, not interpolated")
+            # Verify the restoration uses %s placeholder (not f-string)
+            restore_call = set_config_calls[-1]
+            self.assertIn(
+                "%s", str(restore_call), "Restoration should use %s placeholder"
+            )
+            self.assertNotIn(
+                '"$user"',
+                str(restore_call).split("%s")[0],
+                "Complex values should be passed as parameters, not interpolated",
+            )
 
     def test_schema_tenant_login_success(self):
         """
@@ -1346,58 +1371,66 @@ class TenantAdminAuthenticationFormCleanTests(TestCase):
         """
         mock_cursor = self._create_mock_cursor("public")
         mock_connection = MagicMock()
-        mock_connection.cursor.return_value.__enter__ = MagicMock(return_value=mock_cursor)
+        mock_connection.cursor.return_value.__enter__ = MagicMock(
+            return_value=mock_cursor
+        )
         mock_connection.cursor.return_value.__exit__ = MagicMock(return_value=False)
 
-        with patch("tenantkit.admin_site.connection", mock_connection):
-            with patch("tenantkit.admin_site.get_user_model") as mock_get_user_model:
-                # Create mock user that simulates a user in the tenant schema
-                mock_user = MagicMock()
-                mock_user.check_password.return_value = True
-                mock_user.is_active = True
-                mock_user.is_staff = True
-                mock_user.pk = 123
+        with (
+            patch("django.db.connection", mock_connection),
+            patch("tenantkit.admin_site.get_user_model") as mock_get_user_model,
+        ):
+            # Create mock user that simulates a user in the tenant schema
+            mock_user = MagicMock()
+            mock_user.check_password.return_value = True
+            mock_user.is_active = True
+            mock_user.is_staff = True
+            mock_user.pk = 123
 
-                mock_manager = MagicMock()
-                mock_manager.get_by_natural_key.return_value = mock_user
-                mock_model = MagicMock()
-                mock_model._default_manager = mock_manager
-                mock_model.DoesNotExist = User.DoesNotExist
-                mock_get_user_model.return_value = mock_model
+            mock_manager = MagicMock()
+            mock_manager.get_by_natural_key.return_value = mock_user
+            mock_model = MagicMock()
+            mock_model._default_manager = mock_manager
+            mock_model.DoesNotExist = User.DoesNotExist
+            mock_get_user_model.return_value = mock_model
 
-                form = TenantAdminAuthenticationForm(
-                    data={
-                        "username": "tenantuser",
-                        "password": "correctpass",
-                        "tenant": self.schema_tenant.pk,
-                    }
-                )
+            form = TenantAdminAuthenticationForm(
+                data={
+                    "username": "tenantuser",
+                    "password": "correctpass",
+                    "tenant": self.schema_tenant.pk,
+                }
+            )
 
-                # Form should be valid
-                is_valid = form.is_valid()
-                self.assertTrue(is_valid, f"Form errors: {form.errors}")
+            # Form should be valid
+            is_valid = form.is_valid()
+            self.assertTrue(is_valid, f"Form errors: {form.errors}")
 
-                # Verify user was looked up
-                mock_manager.get_by_natural_key.assert_called_once_with("tenantuser")
+            # Verify user was looked up
+            mock_manager.get_by_natural_key.assert_called_once_with("tenantuser")
 
-                # Verify password was checked
-                mock_user.check_password.assert_called_once_with("correctpass")
+            # Verify password was checked
+            mock_user.check_password.assert_called_once_with("correctpass")
 
-                # Verify user is cached in form
-                self.assertEqual(form.user_cache, mock_user)
+            # Verify user is cached in form
+            self.assertEqual(form.user_cache, mock_user)
 
-                # Verify tenant_obj is set
-                self.assertIsNotNone(form.tenant_obj)
-                self.assertEqual(form.tenant_obj.pk, self.schema_tenant.pk)
+            # Verify tenant_obj is set
+            self.assertIsNotNone(form.tenant_obj)
+            self.assertEqual(form.tenant_obj.pk, self.schema_tenant.pk)
 
-                # Verify search_path was set to tenant schema
-                execute_calls = [call[0][0] for call in mock_cursor.execute.call_args_list]
-                set_tenant_path_call = None
-                for call in execute_calls:
-                    if "set_config" in str(call) and "test_tenant_schema" in str(call):
-                        set_tenant_path_call = call
-                        break
-                self.assertIsNotNone(set_tenant_path_call, "Should set search_path to tenant schema")
+            # Verify search_path was set to tenant schema
+            set_tenant_path_call = None
+            for call in mock_cursor.execute.call_args_list:
+                args = call[0]
+                sql = args[0]
+                params = args[1] if len(args) > 1 else ()
+                if "set_config" in str(sql) and self.schema_tenant.schema_name in params:
+                    set_tenant_path_call = sql
+                    break
+            self.assertIsNotNone(
+                set_tenant_path_call, "Should set search_path to tenant schema"
+            )
 
     def test_schema_tenant_login_user_not_found(self):
         """
@@ -1406,40 +1439,50 @@ class TenantAdminAuthenticationFormCleanTests(TestCase):
         """
         mock_cursor = self._create_mock_cursor("public")
         mock_connection = MagicMock()
-        mock_connection.cursor.return_value.__enter__ = MagicMock(return_value=mock_cursor)
+        mock_connection.cursor.return_value.__enter__ = MagicMock(
+            return_value=mock_cursor
+        )
         mock_connection.cursor.return_value.__exit__ = MagicMock(return_value=False)
 
-        with patch("tenantkit.admin_site.connection", mock_connection):
-            with patch("tenantkit.admin_site.get_user_model") as mock_get_user_model:
-                # Simulate user not found in tenant schema
-                mock_manager = MagicMock()
-                mock_manager.get_by_natural_key.side_effect = User.DoesNotExist
-                mock_model = MagicMock()
-                mock_model._default_manager = mock_manager
-                mock_model.DoesNotExist = User.DoesNotExist
-                mock_get_user_model.return_value = mock_model
+        with (
+            patch("django.db.connection", mock_connection),
+            patch("tenantkit.admin_site.get_user_model") as mock_get_user_model,
+        ):
+            # Simulate user not found in tenant schema
+            mock_manager = MagicMock()
+            mock_manager.get_by_natural_key.side_effect = User.DoesNotExist
+            mock_model = MagicMock()
+            mock_model._default_manager = mock_manager
+            mock_model.DoesNotExist = User.DoesNotExist
+            mock_get_user_model.return_value = mock_model
 
-                form = TenantAdminAuthenticationForm(
-                    data={
-                        "username": "nonexistentuser",
-                        "password": "anypassword",
-                        "tenant": self.schema_tenant.pk,
-                    }
-                )
+            form = TenantAdminAuthenticationForm(
+                data={
+                    "username": "nonexistentuser",
+                    "password": "anypassword",
+                    "tenant": self.schema_tenant.pk,
+                }
+            )
 
-                # Form should be invalid
-                self.assertFalse(form.is_valid())
+            # Form should be invalid
+            self.assertFalse(form.is_valid())
 
-                # Verify error message
-                self.assertIn(
-                    "Please enter the correct username and password",
-                    str(form.non_field_errors())
-                )
+            # Verify error message
+            self.assertIn(
+                "Please enter the correct username and password",
+                str(form.non_field_errors()),
+            )
 
-                # Verify search_path was still restored in finally block
-                execute_calls = [call[0][0] for call in mock_cursor.execute.call_args_list]
-                set_config_calls = [call for call in execute_calls if "set_config" in str(call)]
-                self.assertEqual(len(set_config_calls), 2, "Should set and restore search_path even on failure")
+            # Verify search_path was still restored in finally block
+            execute_calls = [call[0][0] for call in mock_cursor.execute.call_args_list]
+            set_config_calls = [
+                call for call in execute_calls if "set_config" in str(call)
+            ]
+            self.assertEqual(
+                len(set_config_calls),
+                2,
+                "Should set and restore search_path even on failure",
+            )
 
     def test_schema_tenant_login_wrong_password(self):
         """
@@ -1447,41 +1490,45 @@ class TenantAdminAuthenticationFormCleanTests(TestCase):
         """
         mock_cursor = self._create_mock_cursor("public")
         mock_connection = MagicMock()
-        mock_connection.cursor.return_value.__enter__ = MagicMock(return_value=mock_cursor)
+        mock_connection.cursor.return_value.__enter__ = MagicMock(
+            return_value=mock_cursor
+        )
         mock_connection.cursor.return_value.__exit__ = MagicMock(return_value=False)
 
-        with patch("tenantkit.admin_site.connection", mock_connection):
-            with patch("tenantkit.admin_site.get_user_model") as mock_get_user_model:
-                # Create mock user with wrong password
-                mock_user = MagicMock()
-                mock_user.check_password.return_value = False  # Wrong password
+        with (
+            patch("django.db.connection", mock_connection),
+            patch("tenantkit.admin_site.get_user_model") as mock_get_user_model,
+        ):
+            # Create mock user with wrong password
+            mock_user = MagicMock()
+            mock_user.check_password.return_value = False  # Wrong password
 
-                mock_manager = MagicMock()
-                mock_manager.get_by_natural_key.return_value = mock_user
-                mock_model = MagicMock()
-                mock_model._default_manager = mock_manager
-                mock_model.DoesNotExist = User.DoesNotExist
-                mock_get_user_model.return_value = mock_model
+            mock_manager = MagicMock()
+            mock_manager.get_by_natural_key.return_value = mock_user
+            mock_model = MagicMock()
+            mock_model._default_manager = mock_manager
+            mock_model.DoesNotExist = User.DoesNotExist
+            mock_get_user_model.return_value = mock_model
 
-                form = TenantAdminAuthenticationForm(
-                    data={
-                        "username": "existinguser",
-                        "password": "wrongpassword",
-                        "tenant": self.schema_tenant.pk,
-                    }
-                )
+            form = TenantAdminAuthenticationForm(
+                data={
+                    "username": "existinguser",
+                    "password": "wrongpassword",
+                    "tenant": self.schema_tenant.pk,
+                }
+            )
 
-                # Form should be invalid
-                self.assertFalse(form.is_valid())
+            # Form should be invalid
+            self.assertFalse(form.is_valid())
 
-                # Verify error message
-                self.assertIn(
-                    "Please enter the correct username and password",
-                    str(form.non_field_errors())
-                )
+            # Verify error message
+            self.assertIn(
+                "Please enter the correct username and password",
+                str(form.non_field_errors()),
+            )
 
-                # Verify password was checked
-                mock_user.check_password.assert_called_once_with("wrongpassword")
+            # Verify password was checked
+            mock_user.check_password.assert_called_once_with("wrongpassword")
 
     def test_schema_tenant_uses_quote_ident(self):
         """
@@ -1499,113 +1546,138 @@ class TenantAdminAuthenticationFormCleanTests(TestCase):
 
         mock_cursor = self._create_mock_cursor("public")
         mock_connection = MagicMock()
-        mock_connection.cursor.return_value.__enter__ = MagicMock(return_value=mock_cursor)
+        mock_connection.cursor.return_value.__enter__ = MagicMock(
+            return_value=mock_cursor
+        )
         mock_connection.cursor.return_value.__exit__ = MagicMock(return_value=False)
 
-        with patch("tenantkit.admin_site.connection", mock_connection):
-            with patch("tenantkit.admin_site.get_user_model") as mock_get_user_model:
-                mock_user = MagicMock()
-                mock_user.check_password.return_value = True
-                mock_user.is_active = True
-                mock_user.is_staff = True
+        with (
+            patch("django.db.connection", mock_connection),
+            patch("tenantkit.admin_site.get_user_model") as mock_get_user_model,
+        ):
+            mock_user = MagicMock()
+            mock_user.check_password.return_value = True
+            mock_user.is_active = True
+            mock_user.is_staff = True
 
-                mock_manager = MagicMock()
-                mock_manager.get_by_natural_key.return_value = mock_user
-                mock_model = MagicMock()
-                mock_model._default_manager = mock_manager
-                mock_model.DoesNotExist = User.DoesNotExist
-                mock_get_user_model.return_value = mock_model
+            mock_manager = MagicMock()
+            mock_manager.get_by_natural_key.return_value = mock_user
+            mock_model = MagicMock()
+            mock_model._default_manager = mock_manager
+            mock_model.DoesNotExist = User.DoesNotExist
+            mock_get_user_model.return_value = mock_model
 
-                form = TenantAdminAuthenticationForm(
-                    data={
-                        "username": "user",
-                        "password": "pass",
-                        "tenant": malicious_tenant.pk,
-                    }
-                )
+            form = TenantAdminAuthenticationForm(
+                data={
+                    "username": "user",
+                    "password": "pass",
+                    "tenant": malicious_tenant.pk,
+                }
+            )
 
-                form.is_valid()
+            form.is_valid()
 
-                # Verify that quote_ident is used in the SQL
-                execute_calls = [call[0][0] for call in mock_cursor.execute.call_args_list]
-                set_config_calls = [
-                    call for call in execute_calls
-                    if "set_config" in str(call) and "search_path" in str(call)
-                ]
+            # Verify that quote_ident is used in the SQL
+            execute_calls = [call[0][0] for call in mock_cursor.execute.call_args_list]
+            set_config_calls = [
+                call
+                for call in execute_calls
+                if "set_config" in str(call) and "search_path" in str(call)
+            ]
 
-                # The first set_config should use quote_ident
-                self.assertTrue(len(set_config_calls) >= 1, "Should have set_config calls")
-                first_set_config = set_config_calls[0]
-                self.assertIn("quote_ident", str(first_set_config).lower(),
-                    "Schema name should be escaped using quote_ident")
+            # The first set_config should use quote_ident
+            self.assertTrue(len(set_config_calls) >= 1, "Should have set_config calls")
+            first_set_config = set_config_calls[0]
+            self.assertIn(
+                "quote_ident",
+                str(first_set_config).lower(),
+                "Schema name should be escaped using quote_ident",
+            )
 
-                # Verify the malicious schema name is passed as a parameter (%s)
-                # and not directly interpolated
-                call_args = mock_cursor.execute.call_args_list
-                for call in call_args:
-                    sql, params = call[0]
-                    if "set_config" in str(sql) and "search_path" in str(sql):
-                        # Check that the schema name is in params, not in the SQL
-                        if params and malicious_tenant.schema_name in params:
-                            self.assertNotIn(malicious_tenant.schema_name, str(sql),
-                                "Malicious schema name should be a parameter, not in SQL")
+            # Verify the malicious schema name is passed as a parameter (%s)
+            # and not directly interpolated
+            call_args = mock_cursor.execute.call_args_list
+            for call in call_args:
+                args = call[0]
+                sql = args[0]
+                params = args[1] if len(args) > 1 else ()
+                if (
+                    "set_config" in str(sql)
+                    and "search_path" in str(sql)
+                    and params
+                    and malicious_tenant.schema_name in params
+                ):
+                    # Check that the schema name is in params, not in the SQL
+                    self.assertNotIn(
+                        malicious_tenant.schema_name,
+                        str(sql),
+                        "Malicious schema name should be a parameter, not in SQL",
+                    )
 
     def test_database_tenant_login_still_works(self):
         """
         Regression test: Ensure DATABASE tenant login wasn't broken by SCHEMA fix.
         """
-        with patch("tenantkit.admin_site.ensure_runtime_tenant_connection") as mock_ensure:
-            with patch("tenantkit.admin_site.DatabaseStrategy") as mock_strategy_class:
-                with patch("tenantkit.admin_site.get_user_model") as mock_get_user_model:
-                    # Mock the strategy
-                    mock_strategy = MagicMock()
-                    mock_strategy.db_for_read.return_value = "tenant_test_db"
-                    mock_strategy_class.return_value = mock_strategy
+        with (
+            patch(
+                "tenantkit.admin_site.ensure_runtime_tenant_connection"
+            ) as mock_ensure,
+            patch("tenantkit.admin_site.DatabaseStrategy") as mock_strategy_class,
+            patch("tenantkit.admin_site.get_user_model") as mock_get_user_model,
+        ):
+            # Mock the strategy
+            mock_strategy = MagicMock()
+            mock_strategy.db_for_read.return_value = "tenant_test_db"
+            mock_strategy_class.return_value = mock_strategy
 
-                    # Mock user lookup
-                    mock_user = MagicMock()
-                    mock_user.check_password.return_value = True
-                    mock_user.is_active = True
-                    mock_user.is_staff = True
+            # Mock user lookup
+            mock_user = MagicMock()
+            mock_user.check_password.return_value = True
+            mock_user.is_active = True
+            mock_user.is_staff = True
 
-                    mock_manager = MagicMock()
-                    mock_manager.db_manager.return_value.get_by_natural_key.return_value = mock_user
-                    mock_model = MagicMock()
-                    mock_model._default_manager = mock_manager
-                    mock_model.DoesNotExist = User.DoesNotExist
-                    mock_get_user_model.return_value = mock_model
+            mock_manager = MagicMock()
+            mock_manager.db_manager.return_value.get_by_natural_key.return_value = (
+                mock_user
+            )
+            mock_model = MagicMock()
+            mock_model._default_manager = mock_manager
+            mock_model.DoesNotExist = User.DoesNotExist
+            mock_get_user_model.return_value = mock_model
 
-                    form = TenantAdminAuthenticationForm(
-                        data={
-                            "username": "dbuser",
-                            "password": "dbpass",
-                            "tenant": self.database_tenant.pk,
-                        }
-                    )
+            form = TenantAdminAuthenticationForm(
+                data={
+                    "username": "dbuser",
+                    "password": "dbpass",
+                    "tenant": self.database_tenant.pk,
+                }
+            )
 
-                    # Form should be valid
-                    is_valid = form.is_valid()
-                    self.assertTrue(is_valid, f"Form errors: {form.errors}")
+            # Form should be valid
+            is_valid = form.is_valid()
+            self.assertTrue(is_valid, f"Form errors: {form.errors}")
 
-                    # Verify ensure_runtime_tenant_connection was called
-                    mock_ensure.assert_called_once_with(self.database_tenant)
+            # Verify ensure_runtime_tenant_connection was called
+            mock_ensure.assert_called_once_with(self.database_tenant)
 
-                    # Verify DatabaseStrategy was instantiated
-                    mock_strategy_class.assert_called_once()
+            # Verify DatabaseStrategy was instantiated
+            mock_strategy_class.assert_called_once()
 
-                    # Verify db_for_read was called
-                    mock_strategy.db_for_read.assert_called_once()
+            # Verify db_for_read was called
+            mock_strategy.db_for_read.assert_called_once()
 
-                    # Verify user was looked up using the correct database alias
-                    mock_manager.db_manager.assert_called_once_with("tenant_test_db")
-                    mock_manager.db_manager.return_value.get_by_natural_key.assert_called_once_with("dbuser")
+            # Verify user was looked up using the correct database alias
+            mock_manager.db_manager.assert_called_once_with("tenant_test_db")
+            mock_manager.db_manager.return_value.get_by_natural_key.assert_called_once_with(
+                "dbuser"
+            )
 
-                    # Verify user is cached
-                    self.assertEqual(form.user_cache, mock_user)
+            # Verify user is cached
+            self.assertEqual(form.user_cache, mock_user)
 
-                    # Verify tenant_obj is set
-                    self.assertIsNotNone(form.tenant_obj)
-                    self.assertEqual(form.tenant_obj.pk, self.database_tenant.pk)
+            # Verify tenant_obj is set
+            self.assertIsNotNone(form.tenant_obj)
+            self.assertEqual(form.tenant_obj.pk, self.database_tenant.pk)
 
 
 class AuthHelpersTests(TestCase):

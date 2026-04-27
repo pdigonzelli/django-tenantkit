@@ -20,15 +20,10 @@ from django.views.decorators.cache import never_cache
 
 from tenantkit.bootstrap import register_database_tenant_connection
 from tenantkit.core.context import (
-    clear_current_strategy,
-    clear_current_tenant,
     get_current_tenant,
-    set_current_strategy,
-    set_current_tenant,
 )
 from tenantkit.models import Tenant
 from tenantkit.strategies.database.strategy import DatabaseStrategy
-from tenantkit.strategies.schema.strategy import SchemaStrategy
 
 SESSION_ACTIVE_TENANT_ID = "active_tenant_id"
 SESSION_AUTH_SCOPE = "auth_scope"
@@ -87,11 +82,11 @@ class TenantAdminAuthenticationForm(AdminAuthenticationForm):
             return self.cleaned_data
 
         user_model = get_user_model()
-        
+
         # For SCHEMA tenants: temporarily set search_path to tenant schema
         # to find the user in the correct location
         from django.db import connection
-        
+
         if tenant.isolation_mode == Tenant.IsolationMode.SCHEMA:
             schema_name = tenant.schema_name
 
@@ -132,12 +127,12 @@ class TenantAdminAuthenticationForm(AdminAuthenticationForm):
                         "SELECT pg_catalog.set_config('search_path', %s, false)",
                         [old_search_path],
                     )
-        
+
         elif tenant.isolation_mode == Tenant.IsolationMode.DATABASE:
             ensure_runtime_tenant_connection(tenant)
             strategy = DatabaseStrategy()
             database_alias = strategy.db_for_read(user_model, tenant=tenant) or "default"
-            
+
             try:
                 user = user_model._default_manager.db_manager(
                     database_alias
