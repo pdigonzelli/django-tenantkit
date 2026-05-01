@@ -1,4 +1,10 @@
-# Arquitectura
+# Arquitectura (Target / RFC)
+
+> **⚠️ Este documento describe la arquitectura OBJETIVO, no el estado actual de la implementación.**
+> Muchos de los componentes descritos aquí (Resolvers, TenantActivationService, CompositeTenantResolver, etc.)
+> aún no están implementados. Para la documentación de lo que existe hoy, ver los docs principales.
+
+---
 
 ## Principio general
 

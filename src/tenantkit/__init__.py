@@ -30,12 +30,12 @@ Quick Start:
            # ...
        ]
 
-        DATABASE_ROUTERS = ["tenantkit.routers.tenant.TenantRouter"]
+        DATABASE_ROUTERS = ["tenantkit.routers.TenantRouter"]
 """
 
 from typing import TYPE_CHECKING
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 # Model configuration exports (safe to import early)
 from .model_config import (

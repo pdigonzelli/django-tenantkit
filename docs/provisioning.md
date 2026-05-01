@@ -484,7 +484,6 @@ All models with soft delete support (`AuditModel`) have enhanced admin interface
 ### Models with Soft Delete Support
 
 - **Tenant**: Full soft delete with database cleanup
-- **TenantMembership**: Soft delete with restore capability
 - **TenantInvitation**: Soft delete with restore capability
 - **TenantSetting**: Soft delete with restore capability
 

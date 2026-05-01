@@ -175,10 +175,10 @@ Public documentation:
 
 Technical and architectural material:
 
-- [Architecture](https://github.com/pdigonzelli/django-tenantkit/blob/main/docs/architecture.md)
 - [Model Configuration Implementation](https://github.com/pdigonzelli/django-tenantkit/blob/main/docs/MODEL_CONFIG_IMPLEMENTATION.md)
 - [Auth and Admin](https://github.com/pdigonzelli/django-tenantkit/blob/main/docs/auth-and-admin.md)
 - [ADRs](https://github.com/pdigonzelli/django-tenantkit/tree/main/docs/adr)
+- [Architecture RFC (target)](https://github.com/pdigonzelli/django-tenantkit/blob/main/docs/rfc/architecture-target.md)
 
 ---
 

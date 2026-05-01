@@ -50,6 +50,6 @@ Tenant activation applies the chosen isolation strategy and makes tenant context
 
 ## Related Documents
 
-- [Architecture](./architecture.md)
+- [Architecture RFC (target)](./rfc/architecture-target.md)
 - [Provisioning](./provisioning.md)
 - [Example Project](./example.md)

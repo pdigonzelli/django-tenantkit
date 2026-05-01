@@ -66,12 +66,13 @@ Esto permite que `auth_user` y sus dependencias se migren en todos los contextos
 
 ### Sistema de Clasificación
 
-TenantKit soporta cuatro niveles de clasificación:
+TenantKit soporta tres niveles de clasificación por settings, más decoradores por modelo:
 
 1. **BOTH_APPS** – Apps que existen en ambos contextos (shared y tenant)
 2. **SHARED_APPS** – Apps que solo existen en la base compartida
 3. **TENANT_APPS** – Apps que solo existen en contextos tenant
-4. **MIXED_APPS** – Configuración fina por modelo dentro de una app
+
+Para granularidad por modelo dentro de una misma app, usá los decoradores `@shared_model` y `@tenant_model` directamente.
 
 Ejemplo completo:
 
@@ -93,14 +94,20 @@ TENANTKIT_TENANT_APPS = [
     "myapp.sensors",  # datos de sensores por tenant
     "myapp.billing",  # facturación por tenant
 ]
+```
 
-# Control fino por modelo (opcional)
-TENANTKIT_MIXED_APPS = {
-    "myapp.core": {
-        "shared_models": ["GlobalConfig"],
-        "tenant_models": ["TenantSetting"],
-    }
-}
+Para control fino por modelo:
+
+```python
+from tenantkit import shared_model, tenant_model
+
+@shared_model
+class GlobalConfig(models.Model):
+    ...
+
+@tenant_model
+class TenantPreference(models.Model):
+    ...
 ```
 
 ### Precedencia
@@ -108,10 +115,9 @@ TENANTKIT_MIXED_APPS = {
 Cuando hay conflictos, se aplica esta precedencia (de mayor a menor):
 
 1. Decoradores de modelo (`@shared_model`, `@tenant_model`)
-2. Configuración `TENANTKIT_MIXED_APPS`
-3. Configuración `TENANTKIT_BOTH_APPS`
-4. Configuración `TENANTKIT_SHARED_APPS` / `TENANTKIT_TENANT_APPS`
-5. Por defecto: deferir a Django
+2. Configuración `TENANTKIT_BOTH_APPS`
+3. Configuración `TENANTKIT_SHARED_APPS` / `TENANTKIT_TENANT_APPS`
+4. Por defecto: deferir a Django
 
 Verifica tu configuración con:
 
@@ -225,7 +231,7 @@ Estos helpers son una **base agnóstica de backend**.
 
 ### Importante
 
-La **integración concreta** con una tecnología JWT específica queda diferida a una fase futura. Hoy tenantkit provee la base y los puntos de integración, no una implementación cerrada para un proveedor particular.
+Estos helpers están **implementados y disponibles**. Son agnósticos de backend JWT — funcionan con simplejwt, Djoser, Keycloak, Auth0, etc. TenantKit provee la base y los puntos de integración, no una implementación cerrada para un proveedor particular.
 
 ### Ejemplo de integración futura
 

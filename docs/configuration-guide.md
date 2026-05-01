@@ -143,13 +143,9 @@ TENANTKIT_TENANT_APPS = [
     "myapp.tasks",       # Tareas por tenant
 ]
 
-# App mixta: algunos modelos globales, otros por tenant
-TENANTKIT_MIXED_APPS = {
-    "myapp.core": {
-        "shared_models": ["Plan", "Feature"],
-        "tenant_models": ["Subscription", "Usage"],
-    }
-}
+# Para granularidad por modelo dentro de una misma app,
+# usa los decoradores @shared_model y @tenant_model directamente en los modelos.
+# from tenantkit import shared_model, tenant_model
 ```
 
 ### Caso 3: Multi-tenant con Schema Isolation
@@ -272,7 +268,7 @@ TENANTKIT_TENANT_APPS += ["myapp"]
 
 2. **Usa BOTH_APPS solo para framework**: `auth`, `contenttypes`, `sessions`
 
-3. **Evita MIXED_APPS si puedes**: Mejor separar en apps distintas
+3. **Para granularidad por modelo**: Usá `@shared_model` / `@tenant_model` decorators en vez de settings a nivel de app
 
 4. **Verifica regularmente**:
    ```bash
@@ -288,15 +284,20 @@ TENANTKIT_TENANT_APPS += ["myapp"]
 # settings.py
 
 INSTALLED_APPS = [
-    "tenantkit",
-    "myapp.global",
-    "myapp.tenants",
+    # Django core FIRST (auth before tenantkit)
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+
+    # TenantKit AFTER auth
+    "tenantkit",
+
+    # Your apps
+    "myapp.global",
+    "myapp.tenants",
 ]
 
 DATABASE_ROUTERS = [
@@ -305,11 +306,11 @@ DATABASE_ROUTERS = [
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
-    "tenantkit.middleware.TenantMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
-    "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "django.contrib.auth.middleware.AuthenticationMiddleware",  # BEFORE TenantMiddleware
+    "tenantkit.middleware.TenantMiddleware",                    # AFTER AuthenticationMiddleware
     "django.contrib.messages.middleware.MessageMiddleware",
 ]
 
@@ -332,6 +333,6 @@ TENANTKIT_TENANT_APPS = [
 
 ## Referencias
 
-- [ADR 0006: App and Model Classification](../adr/0006-app-model-classification.md)
+- [ADR 0006: App and Model Classification](./adr/0006-app-model-classification.md)
 - [Auth y Admin](./auth-and-admin.md)
 - [Guía de Migración](./migration-guide-v0.x-to-v1.md)

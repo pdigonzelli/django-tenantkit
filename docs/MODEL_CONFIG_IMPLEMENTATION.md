@@ -162,7 +162,6 @@ The following tenantkit models are now registered as **shared**:
 | Model | Table | Type |
 |-------|-------|------|
 | `Tenant` | `tenantkit_tenant` | shared |
-| `TenantMembership` | `tenantkit_tenantmembership` | shared |
 | `TenantInvitation` | `tenantkit_tenantinvitation` | shared |
 | `TenantSetting` | `tenantkit_tenantsetting` | shared |
 

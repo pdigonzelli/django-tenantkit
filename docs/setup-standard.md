@@ -381,7 +381,7 @@ print(f'Tenant creado: {t.schema_name}')
 "
 
 # 5. Verificar que el tenant tiene tablas correctas
-python manage.py migrate_schemas --tenant=test_tenant
+python manage.py tenant_migrate --tenant=test_tenant
 ```
 
 ### ✅ Test de Autenticación

@@ -220,7 +220,7 @@ python manage.py list_tenant_models --type=both
 
 ## Recursos
 
-- [ADR 0006: App and Model Classification](../adr/0006-app-model-classification.md)
+- [ADR 0006: App and Model Classification](./adr/0006-app-model-classification.md)
 - [Guía de Configuración](./configuration-guide.md)
 - [Auth y Admin](./auth-and-admin.md)
 
