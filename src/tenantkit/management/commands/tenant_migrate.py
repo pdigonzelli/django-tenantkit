@@ -279,14 +279,19 @@ class Command(MigrateCommand):
         strategy = SchemaStrategy()
         set_current_strategy(strategy)
 
-        # Ensure the tenant schema has its OWN django_migrations table.
-        # Without this, search_path = "tenant_schema, public" resolves
-        # django_migrations from public, and Django believes all migrations
-        # are already applied — skipping table creation in the tenant schema.
+        # Read shared migrations BEFORE switching search_path (reads from public)
+        from django.db.migrations.recorder import MigrationRecorder
+
+        recorder = MigrationRecorder(connection)
+        shared_applied = recorder.applied_migrations()
+
+        # Ensure the tenant schema has its own django_migrations table and
+        # pre-populate it with shared app migrations. This prevents Django from
+        # re-applying shared migrations (auth, contenttypes, tenantkit) inside
+        # the tenant schema. Only tenant-specific apps will actually migrate.
+        # This is the same approach used by django-tenants.
         with connection.cursor() as cursor:
-            cursor.execute(
-                f'SET search_path TO "{schema_name}"'
-            )
+            cursor.execute(f'SET search_path TO "{schema_name}"')
             cursor.execute(
                 "CREATE TABLE IF NOT EXISTS django_migrations ("
                 "  id bigserial PRIMARY KEY,"
@@ -295,17 +300,30 @@ class Command(MigrateCommand):
                 "  applied timestamp with time zone NOT NULL DEFAULT now()"
                 ")"
             )
-            # Restore search_path to include public (needed for shared tables)
-            cursor.execute(
-                f'SET search_path TO "{schema_name}", public'
-            )
 
-        # Activate with include_public=True so shared tables (auth, tenantkit)
-        # remain visible during migration execution.
+            # Pre-populate with shared app migrations (skip tenant apps)
+            for (app_label, migration_name) in shared_applied:
+                if app_label not in tenant_apps:
+                    cursor.execute(
+                        "INSERT INTO django_migrations (app, name, applied) "
+                        "SELECT %s, %s, now() "
+                        "WHERE NOT EXISTS ("
+                        "  SELECT 1 FROM django_migrations "
+                        "  WHERE app = %s AND name = %s"
+                        ")",
+                        [app_label, migration_name, app_label, migration_name],
+                    )
+
+            # Restore search_path to include public (shared tables must be visible)
+            cursor.execute(f'SET search_path TO "{schema_name}", public')
+
+        # Activate with include_public=True so shared tables (auth_user,
+        # tenantkit_tenant, etc.) remain visible during migration execution.
         strategy.activate(tenant)
 
         try:
-            # Run migrations in this schema context
+            # Run migrations in this schema context — only tenant apps will
+            # actually execute because shared apps are pre-marked as applied.
             self._run_migrations_in_context(
                 tenant=tenant,
                 args=args,
