@@ -367,19 +367,20 @@ class Command(MigrateCommand):
         if self.fake_tenant:
             migrate_options["fake"] = True
 
-        # Filter apps to only tenant apps
+        # Always filter to tenant apps only — tenant schemas must NOT receive
+        # shared migrations (auth, admin, contenttypes, tenantkit, etc.)
         if args:
-            filtered_args = [a for a in args if a in tenant_apps]
-            if filtered_args:
-                args = tuple(filtered_args)
+            filtered_args = tuple(a for a in args if a in tenant_apps)
+        else:
+            filtered_args = tuple(sorted(tenant_apps))
 
         # Store current tenant in context for potential use in migrations
         previous_tenant = get_current_tenant()
         set_current_tenant(tenant)
 
         try:
-            # Run the migrations
-            super().handle(*args, **migrate_options)
+            # Run the migrations only for tenant apps
+            super().handle(*filtered_args, **migrate_options)
         finally:
             # Restore previous tenant context
             set_current_tenant(previous_tenant)
