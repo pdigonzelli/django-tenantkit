@@ -276,16 +276,33 @@ class Command(MigrateCommand):
         # This is critical: the router checks for an active strategy to decide
         # whether tenant models are allowed on "default" (schema-based tenants
         # use the default database with a different search_path).
-        #
-        # IMPORTANT: include_public=False ensures django_migrations is looked up
-        # ONLY in the tenant schema, not in public. Without this, PostgreSQL
-        # resolves django_migrations from public (via search_path fallback),
-        # sees shared migrations as "already applied", and skips creating
-        # tenant tables entirely.
         strategy = SchemaStrategy()
         set_current_strategy(strategy)
-        from tenantkit.backends.postgresql.base import activate_schema
-        activate_schema(tenant.schema_name, include_public=False)
+
+        # Ensure the tenant schema has its OWN django_migrations table.
+        # Without this, search_path = "tenant_schema, public" resolves
+        # django_migrations from public, and Django believes all migrations
+        # are already applied — skipping table creation in the tenant schema.
+        with connection.cursor() as cursor:
+            cursor.execute(
+                f'SET search_path TO "{schema_name}"'
+            )
+            cursor.execute(
+                "CREATE TABLE IF NOT EXISTS django_migrations ("
+                "  id bigserial PRIMARY KEY,"
+                "  app varchar(255) NOT NULL,"
+                "  name varchar(255) NOT NULL,"
+                "  applied timestamp with time zone NOT NULL DEFAULT now()"
+                ")"
+            )
+            # Restore search_path to include public (needed for shared tables)
+            cursor.execute(
+                f'SET search_path TO "{schema_name}", public'
+            )
+
+        # Activate with include_public=True so shared tables (auth, tenantkit)
+        # remain visible during migration execution.
+        strategy.activate(tenant)
 
         try:
             # Run migrations in this schema context
