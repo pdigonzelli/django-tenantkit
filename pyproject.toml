@@ -4,10 +4,10 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "django-tenantkit-core"
-version = "0.2.0"
+version = "0.2.1"
 description = "A comprehensive Django multi-tenancy solution with schema isolation, tenant-aware middleware, and flexible routing"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.13"
 license = "MIT"
 authors = [
     {name = "Pablo Digonzelli", email = "pdigonzelli@gmail.com"}
@@ -20,8 +20,8 @@ classifiers = [
     "Intended Audience :: Developers",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 dependencies = [
@@ -34,7 +34,7 @@ dependencies = [
 ]
 
 [tool.uv.sources]
-django-auditkit = { git = "https://github.com/pdigonzelli/django-auditkit.git" }
+django-auditkit = { path = "/home/pdigonzelli/proyectos/django-auditkit", editable = true }
 
 [dependency-groups]
 dev = [

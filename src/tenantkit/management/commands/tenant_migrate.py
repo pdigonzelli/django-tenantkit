@@ -276,9 +276,16 @@ class Command(MigrateCommand):
         # This is critical: the router checks for an active strategy to decide
         # whether tenant models are allowed on "default" (schema-based tenants
         # use the default database with a different search_path).
+        #
+        # IMPORTANT: include_public=False ensures django_migrations is looked up
+        # ONLY in the tenant schema, not in public. Without this, PostgreSQL
+        # resolves django_migrations from public (via search_path fallback),
+        # sees shared migrations as "already applied", and skips creating
+        # tenant tables entirely.
         strategy = SchemaStrategy()
         set_current_strategy(strategy)
-        strategy.activate(tenant)
+        from tenantkit.backends.postgresql.base import activate_schema
+        activate_schema(tenant.schema_name, include_public=False)
 
         try:
             # Run migrations in this schema context
