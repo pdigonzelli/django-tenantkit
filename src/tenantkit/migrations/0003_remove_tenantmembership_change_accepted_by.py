@@ -4,8 +4,21 @@ from django.db import migrations, models
 
 def copy_accepted_by_to_string(apps, schema_editor):
     TenantInvitation = apps.get_model("tenantkit", "TenantInvitation")
-    UserModel = apps.get_model(*settings.AUTH_USER_MODEL.split("."))
     db_alias = schema_editor.connection.alias
+
+    # On fresh databases (e.g. new tenant schemas), the old accepted_by_id
+    # column was never created — nothing to migrate.
+    connection = schema_editor.connection
+    columns = [
+        col.name
+        for col in connection.introspection.get_table_description(
+            connection.cursor(), "tenantkit_tenantinvitation"
+        )
+    ]
+    if "accepted_by_id" not in columns:
+        return
+
+    UserModel = apps.get_model(*settings.AUTH_USER_MODEL.split("."))
 
     invitations = TenantInvitation.objects.using(db_alias).exclude(
         accepted_by__isnull=True
