@@ -49,6 +49,43 @@ Open an [issue](../../issues) before writing code. This avoids wasted effort if 
 - Follow the existing conventions in the codebase
 - Run the linter/formatter before pushing
 
+## Releasing to PyPI
+
+This project uses **GitHub Actions + Trusted Publisher** for automated releases.
+
+### Steps to publish a new version:
+
+```bash
+# 1. Bump version in pyproject.toml
+#    e.g. version = "0.2.1" → version = "0.2.2"
+
+# 2. Commit the version bump
+git add pyproject.toml
+git commit -m "release: v0.2.2"
+
+# 3. Create a tag matching the version
+git tag v0.2.2
+
+# 4. Push commit + tag
+git push origin main --tags
+```
+
+GitHub Actions (`.github/workflows/publish.yml`) will automatically build and publish to PyPI.
+
+### Version format
+
+Follow [semver](https://semver.org/):
+- **Patch** (0.2.1 → 0.2.2): bug fixes, no API changes
+- **Minor** (0.2.x → 0.3.0): new features, backward compatible
+- **Major** (0.x → 1.0): breaking changes
+
+### Verifying a release
+
+```bash
+# Check it's on PyPI
+curl -s https://pypi.org/pypi/django-tenantkit-core/json | python -c "import sys,json; print(list(json.load(sys.stdin)['releases'].keys()))"
+```
+
 ## License
 
 By contributing, you agree that your contributions will be licensed under the same license as this project.
