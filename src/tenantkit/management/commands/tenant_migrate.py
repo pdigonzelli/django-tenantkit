@@ -402,19 +402,26 @@ class Command(MigrateCommand):
         if self.fake_tenant:
             migrate_options["fake"] = True
 
-        # Always filter to tenant apps only — tenant schemas must NOT receive
-        # shared migrations (auth, admin, contenttypes, tenantkit, etc.)
-        if args:
-            filtered_args = tuple(a for a in args if a in tenant_apps)
+        # For SCHEMA isolation: filter to tenant apps only — shared tables live
+        # in public and are pre-populated in django_migrations.
+        # For DATABASE isolation: run ALL migrations — the tenant database is
+        # independent and needs its own auth, contenttypes, etc.
+        is_schema_tenant = tenant.isolation_mode == Tenant.IsolationMode.SCHEMA
+
+        if is_schema_tenant:
+            if args:
+                filtered_args = tuple(a for a in args if a in tenant_apps)
+            else:
+                filtered_args = tuple(sorted(tenant_apps))
         else:
-            filtered_args = tuple(sorted(tenant_apps))
+            # Database isolation: keep original args (all apps)
+            filtered_args = args if args else ()
 
         # Store current tenant in context for potential use in migrations
         previous_tenant = get_current_tenant()
         set_current_tenant(tenant)
 
         try:
-            # Run the migrations only for tenant apps
             super().handle(*filtered_args, **migrate_options)
         finally:
             # Restore previous tenant context

@@ -799,6 +799,12 @@ def ensure_schema_exists(schema_name: str) -> bool:
 
 
 def migrate_schema_tenant(tenant: Tenant) -> bool:
+    """Migrate a schema-based tenant using the pre-populate approach.
+
+    Creates django_migrations in the tenant schema, pre-populates it with
+    shared app migration records, then runs only tenant app migrations.
+    This is the same approach used by django-tenants.
+    """
     if tenant.isolation_mode != tenant.IsolationMode.SCHEMA:
         return False
 
@@ -809,19 +815,13 @@ def migrate_schema_tenant(tenant: Tenant) -> bool:
     if connections["default"].vendor != "postgresql":
         raise SchemaProvisioningUnsupportedError()
 
-    activate_schema(schema_name, include_public=False)
-    try:
-        app_labels = _get_schema_migration_app_labels()
-        for app_label in app_labels:
-            call_command(
-                "migrate",
-                app_label,
-                database="default",
-                interactive=False,
-                verbosity=0,
-            )
-    finally:
-        deactivate_schema()
+    call_command(
+        "tenant_migrate",
+        tenant_slug=tenant.slug,
+        type="tenant",
+        interactive=False,
+        verbosity=0,
+    )
     logger.info(
         "tenant.schema.migrated", extra={"tenant": tenant.slug, "schema": schema_name}
     )

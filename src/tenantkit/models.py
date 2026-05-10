@@ -93,26 +93,39 @@ class Tenant(AuditModel):
             self.ensure_isolation_fields()
         result = super().save(*args, **kwargs)
 
-        # Skip auto-provisioning if explicitly requested (e.g., when updating connection strings manually)
-        if (
-            not getattr(self, "_skip_auto_provisioning", False)
-            and self.isolation_mode == self.IsolationMode.DATABASE
-        ):
-            from .bootstrap import unregister_database_tenant_connection
-            from .provisioning import ensure_database_tenant_ready
+        # Skip auto-provisioning if explicitly requested
+        if not getattr(self, "_skip_auto_provisioning", False):
+            if self.isolation_mode == self.IsolationMode.DATABASE:
+                from .bootstrap import unregister_database_tenant_connection
+                from .provisioning import ensure_database_tenant_ready
 
-            if (
-                self.is_active
-                and not self.deleted
-                and self.get_provisioning_connection_string()
-            ):
-                transaction.on_commit(lambda: ensure_database_tenant_ready(self))
-            else:
-                transaction.on_commit(
-                    lambda: unregister_database_tenant_connection(
-                        str(self.connection_alias) if self.connection_alias else None
+                if (
+                    self.is_active
+                    and not self.deleted
+                    and self.get_provisioning_connection_string()
+                ):
+                    transaction.on_commit(lambda: ensure_database_tenant_ready(self))
+                else:
+                    transaction.on_commit(
+                        lambda: unregister_database_tenant_connection(
+                            str(self.connection_alias) if self.connection_alias else None
+                        )
                     )
-                )
+
+            elif self.isolation_mode == self.IsolationMode.SCHEMA:
+                from django.db import connections
+
+                from .provisioning import ensure_schema_exists, migrate_schema_tenant
+
+                schema_name = self.schema_name
+                if (
+                    self.is_active
+                    and not self.deleted
+                    and schema_name
+                    and connections["default"].vendor == "postgresql"
+                ):
+                    transaction.on_commit(lambda: ensure_schema_exists(schema_name))
+                    transaction.on_commit(lambda: migrate_schema_tenant(self))
 
         return result
 
