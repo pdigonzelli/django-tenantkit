@@ -36,6 +36,7 @@ from django.core.management.commands.migrate import Command as MigrateCommand
 from django.db import DEFAULT_DB_ALIAS, connections
 
 from tenantkit.bootstrap import register_database_tenant_connection
+from tenantkit.classification import get_both_app_labels, get_shared_app_labels
 from tenantkit.core.context import (
     clear_current_strategy,
     get_current_tenant,
@@ -301,9 +302,13 @@ class Command(MigrateCommand):
                 ")"
             )
 
-            # Pre-populate with shared app migrations (skip tenant apps)
+            # Pre-populate with shared-only app migrations. BOTH_APPS (auth,
+            # contenttypes, sessions) must be physically migrated in each tenant
+            # schema so that per-tenant users can exist. Only pure SHARED_APPS
+            # (like tenantkit itself) are pre-marked as applied.
+            shared_only_apps = get_shared_app_labels()
             for (app_label, migration_name) in shared_applied:
-                if app_label not in tenant_apps:
+                if app_label in shared_only_apps:
                     cursor.execute(
                         "INSERT INTO django_migrations (app, name, applied) "
                         "SELECT %s, %s, now() "
@@ -402,17 +407,23 @@ class Command(MigrateCommand):
         if self.fake_tenant:
             migrate_options["fake"] = True
 
-        # For SCHEMA isolation: filter to tenant apps only — shared tables live
-        # in public and are pre-populated in django_migrations.
+        # For SCHEMA isolation: migrate BOTH_APPS + TENANT_APPS. BOTH_APPS
+        # (auth, contenttypes, sessions) must have tables in both public
+        # and each tenant schema to support per-tenant users. Shared-only
+        # apps (tenantkit) are pre-marked in django_migrations so Django
+        # skips them. TENANT_APPS get their tables created for the first
+        # time in the tenant schema.
         # For DATABASE isolation: run ALL migrations — the tenant database is
         # independent and needs its own auth, contenttypes, etc.
         is_schema_tenant = tenant.isolation_mode == Tenant.IsolationMode.SCHEMA
 
         if is_schema_tenant:
+            both_apps = set(get_both_app_labels())
+            apps_to_migrate = tenant_apps | both_apps
             if args:
-                filtered_args = tuple(a for a in args if a in tenant_apps)
+                filtered_args = tuple(a for a in args if a in apps_to_migrate)
             else:
-                filtered_args = tuple(sorted(tenant_apps))
+                filtered_args = tuple(sorted(apps_to_migrate))
         else:
             # Database isolation: keep original args (all apps)
             filtered_args = args if args else ()
