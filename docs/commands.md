@@ -98,3 +98,40 @@ uv run python example/manage.py check_tenantkit_config --verbose
 - [Quickstart](./quickstart.md)
 - [Provisioning](./provisioning.md)
 - [Testing](./testing.md)
+
+## `tenant_createsuperuser`
+
+Create a superuser inside a specific tenant's database or schema.
+
+```bash
+python manage.py tenant_createsuperuser --tenant <slug>
+```
+
+### Usage
+
+Interactive (prompts for username, email, password):
+```bash
+python manage.py tenant_createsuperuser --tenant acme-corp
+```
+
+Non-interactive:
+```bash
+python manage.py tenant_createsuperuser --tenant acme-corp \
+  --username admin --email admin@acme.com --noinput
+```
+
+### Important
+
+- The user is created **inside the tenant's schema/database**, not in `public`.
+- For schema-based tenants, requires PostgreSQL (SQLite does not support schemas).
+- The command activates the tenant context, runs Django's standard `createsuperuser`,
+  then deactivates the context.
+
+### Testing
+
+Integration-tested manually against a live PostgreSQL instance:
+1. Create a schema tenant
+2. Run `tenant_migrate --tenant <slug>`
+3. Run `tenant_createsuperuser --tenant <slug> --username boss --noinput`
+4. Verify `auth_user` table exists in the tenant schema with the new user
+5. Verify the user does NOT exist in `public.auth_user`
